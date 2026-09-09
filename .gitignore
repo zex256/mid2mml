@@ -1,0 +1,35 @@
+# Visual Studio user state
+.vs/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+
+# Build outputs and intermediate files
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Oo]ut/
+[Bb]in/
+*.obj
+*.pdb
+*.ipdb
+*.iobj
+*.ilk
+*.exe
+*.dll
+*.lib
+*.exp
+*.tlog
+*.lastbuildstate
+*.log
+*.recipe
+
+# CMake build trees
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+Testing/
