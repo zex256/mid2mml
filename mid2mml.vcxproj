@@ -90,28 +90,23 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
-    <PostBuildEvent>
-      <Command>copy \プログラム\mid2mml\mid2mml\Release\mid2mml.exe \mck\bin\. /Y</Command>
-    </PostBuildEvent>
-    <PostBuildEvent>
-      <Message>mck\binにコピー</Message>
-    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="mid2mml.cpp" />
     <ClCompile Include="midi.cpp" />
     <ClCompile Include="mml.cpp" />
-    <ClCompile Include="pch.cpp" />
+    <ClCompile Include="text_encoding.cpp" />
     <ClCompile Include="ToneDef.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="endian.h" />
     <ClInclude Include="midi.h" />
     <ClInclude Include="mml.h" />
-    <ClInclude Include="pch.h" />
-    <ClInclude Include="targetver.h" />
+    <ClInclude Include="text_encoding.h" />
     <ClInclude Include="ToneDef.h" />
-    <ClInclude Include="type.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Manifest Include="app.manifest" />
   </ItemGroup>
   <ItemGroup>
     <None Include="ReadMe.txt" />
