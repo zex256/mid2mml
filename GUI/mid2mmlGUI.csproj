@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>mid2mmlGUI</RootNamespace>
+    <AssemblyName>mid2mmlGUI</AssemblyName>
+    <Mid2mmlCliSource Condition="'$(Mid2mmlCliSource)' == ''">$(MSBuildThisFileDirectory)..\CLI\$(Configuration)\mid2mml.exe</Mid2mmlCliSource>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Update="MainForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Update="MainForm.Designer.cs">
+      <DependentUpon>MainForm.cs</DependentUpon>
+    </Compile>
+    <EmbeddedResource Update="MainForm.resx">
+      <DependentUpon>MainForm.cs</DependentUpon>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <PublishTrimmed>false</PublishTrimmed>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <PublishDir>$(MSBuildThisFileDirectory)publish\</PublishDir>
+  </PropertyGroup>
+
+  <Target Name="CopyCliForBuild" AfterTargets="Build"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!Exists('$(Mid2mmlCliSource)')"
+           Text="mid2mml.exe が見つかりません。先にCLIの$(Configuration)構成をビルドしてください: $(Mid2mmlCliSource)" />
+    <Copy SourceFiles="$(Mid2mmlCliSource)"
+          DestinationFiles="$(TargetDir)mid2mml.exe"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyCliForPublish" AfterTargets="Publish">
+    <Error Condition="!Exists('$(Mid2mmlCliSource)')"
+           Text="mid2mml.exe が見つかりません。先にCLIのRelease構成をビルドするか、Mid2mmlCliSource を指定してください: $(Mid2mmlCliSource)" />
+    <Copy SourceFiles="$(Mid2mmlCliSource)"
+          DestinationFiles="$(PublishDir)mid2mml.exe"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>

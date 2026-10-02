@@ -12,6 +12,8 @@ x64/
 x86/
 [Oo]ut/
 [Bb]in/
+obj/
+publish/
 *.obj
 *.pdb
 *.ipdb
