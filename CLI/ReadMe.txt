@@ -169,26 +169,20 @@ ppmckで扱えるチャンネル、音色定義、音量エンベロープ、ピ
   ・Windows 10 SDK
   ・C++17対応コンパイラ
 
-Visual Studioで mid2mml.sln を開き、Win32のDebugまたはRelease構成を
-ビルドしてください。実行ファイルは Debug\mid2mml.exe または
-Release\mid2mml.exe に生成されます。
+リポジトリのルートにある mid2mml.sln をVisual Studioで開き、
+Win32のDebugまたはRelease構成をビルドしてください。実行ファイルは
+CLI\Debug\mid2mml.exe または CLI\Release\mid2mml.exe に生成されます。
 
 Developer PowerShellからRelease版をビルドする例：
 
   MSBuild.exe .\mid2mml.sln /t:Rebuild /p:Configuration=Release /p:Platform=Win32
-
-Releaseビルド後は、実行ファイルを D:\mck\bin\mid2mml.exe へコピーする
-Post-Buildイベントが実行されます。コピー先が不要、または存在しない環境では、
-次のようにPost-Buildイベントを無効にできます。
-
-  MSBuild.exe .\mid2mml.sln /t:Rebuild /p:Configuration=Release /p:Platform=Win32 /p:PostBuildEventUseInBuild=false
 
 テスト
 ------
 
 Release版をビルドした後、プロジェクトのルートで次を実行します。
 
-  .\tests\Invoke-Tests.ps1 -Executable .\Release\mid2mml.exe
+  .\CLI\tests\Invoke-Tests.ps1 -Executable .\CLI\Release\mid2mml.exe
 
 このスクリプトは、DPCMの回帰比較、各ドラムモードの変換、
 コマンドラインオプション、MIDIテキストの文字コード変換を検証します。
