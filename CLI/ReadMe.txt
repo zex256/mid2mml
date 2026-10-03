@@ -1,6 +1,8 @@
 mid2mml for ppmck
 =================
 
+公開先: https://github.com/zex256/mid2mml
+
 概要
 ----
 

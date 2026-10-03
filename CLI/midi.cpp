@@ -42,25 +42,25 @@ int Midi::Load(                                                                 
   FileHeader fh;                                                                ///< 読み込むMIDIファイルヘッダー
   ifs.read(reinterpret_cast<char*>(&fh), kFileHeaderSize);
   if (!ifs) {
-    cerr << "MIDIファイルの File Header 読み込みでエラー\n";
+    cerr << "MIDIファイルの File Header の読み込みに失敗しました。\n";
     return -1;
   }
   ReverseEndian(fh.key_word);                                                   // エンディアン反転
   if (fh.key_word != 'MThd') {                                                  // MIDIファイルヘッダ"MThd"であること
-    cerr << "MIDIファイルの File Header チャンク'MThd'を認識できない、これはMIDIファイルじゃありません\n";
+    cerr << "MIDIファイルの File Header チャンク'MThd'を認識できません。MIDIファイルではありません。\n";
     return -1;
   }
   ReverseEndian(fh.main_header_size);                                           // エンディアン反転
   cerr << "; Main Header Size " << fh.main_header_size << " byte.\n";
   if (kMainHeaderSize > fh.main_header_size || 0x1000 < fh.main_header_size) {  // ヘッダーサイズが範囲外なら
-    cerr << "Main Headerのサイズ(" << fh.main_header_size << ")が異常\n";
+    cerr << "Main Headerのサイズ(" << fh.main_header_size << ")が異常です。\n";
     return -1;
   }
   // MainHeader
   MainHeader mh;                                                                ///< 読み込むMIDIメインヘッダー
   ifs.read(reinterpret_cast<char*>(&mh), kMainHeaderSize);
   if (!ifs) {
-    cerr << "MIDIファイルの Main Header 読み込みでエラー\n";
+    cerr << "MIDIファイルの Main Header の読み込みに失敗しました。\n";
     return -1;
   }
   ReverseEndian(mh.format);                                                     // エンディアン反転
@@ -76,7 +76,7 @@ int Midi::Load(                                                                 
       static_cast<streamoff>(fh.main_header_size);
   ifs.seekg(main_header_end, ios::beg);                                         // MainHeaderの終わりまで読み飛ばす
   if (!ifs) {
-    cerr << "MIDIファイルの Main Header の後が途切れている\n";
+    cerr << "MIDIファイルの Main Header の後が途切れています。\n";
     return -1;
   }
   // Track
@@ -86,12 +86,12 @@ int Midi::Load(                                                                 
     TrackHeader th;                                                             ///< トラックヘッダー
     ifs.read(reinterpret_cast<char*>(&th), kTrackHeaderSize);
     if (!ifs) {
-      cerr << "MIDIファイルの Track Header 読み込みでエラー\n";
+      cerr << "MIDIファイルの Track Header の読み込みに失敗しました。\n";
       return -1;
     }
     ReverseEndian(th.key_word);                                                 // エンディアン反転
     if (th.key_word != 'MTrk') {                                                // トラックヘッダ"MTrk"であること
-      cerr << "MIDIファイルの Track Header チャンク'MTrk'を認識できない、トラックが壊れている\n";
+      cerr << "MIDIファイルの Track Header チャンク'MTrk'を認識できません。トラックが壊れています。\n";
       return -1;
     }
     ReverseEndian(th.track_size);                                               // エンディアン反転
@@ -144,7 +144,7 @@ int Midi::Decode(                                                               
     }
     is.read(reinterpret_cast<char*>(&(ope.status)), 1);                         // ステータス取得
     if (!is) {
-      cerr << "Status 読み込みでエラー\n";
+      cerr << "Status の読み込みに失敗しました。\n";
       break;
     }
     // ランニングステータスの処理
@@ -294,12 +294,12 @@ int Midi::Decode(                                                               
       break;
 
     default:                                                                    // MIDIフォーマット異常
-      cerr << "警告:MIDIフォーマット異常 Status(" << hex << static_cast<uint16_t>(status)
-           << ")処理強行\n";
+      cerr << "警告：MIDIフォーマットに異常があります。Status(" << hex << static_cast<uint16_t>(status)
+           << ") の処理を続行します。\n";
       break;                                                                    // 処理は強行
     }
     if (!is) {                                                                  // 読み込みエラー抜け出し
-      cerr << "読み込みエラー、MIDIファイル壊れてませんか？\n";
+      cerr << "読み込み中にエラーが発生しました。MIDIファイルが壊れている可能性があります。\n";
       break;
     }
   }
@@ -327,7 +327,7 @@ bool Midi::TimeDecode(                                                          
     uint8_t data;                                                               ///< 読み込んだ可変長値の1バイト
     is.read(reinterpret_cast<char*>(&data), 1);                                 // 可変長値を1バイト読み込む
     if (!is) {                                                                  // 読み込みに失敗したら
-      cerr << "MIDI可変長値の読み込みでエラー、MIDIファイル壊れてませんか？\n";
+      cerr << "MIDI可変長値の読み込みに失敗しました。MIDIファイルが壊れている可能性があります。\n";
       return false;
     }
     value <<= 7;                                                                // 既に解読した値を7ビット左へ移動
@@ -349,7 +349,7 @@ int Midi::Save(                                                                 
   // ファイルオープン
   ofstream ofs(file_path, ios::out | ios::binary);                              ///< ファイルストリーム
   if (!ofs) {
-    cerr << "MIDIファイルの出力でファイルを開けなかった\n";
+    cerr << "MIDIファイルの出力先を開けませんでした。\n";
     return -1;
   }
   // FileHeader
@@ -358,7 +358,7 @@ int Midi::Save(                                                                 
   fh.main_header_size = ConvertEndian(static_cast<uint32_t>(kMainHeaderSize));  // MainHeaderサイズを設定
   ofs.write(reinterpret_cast<char*>(&fh), kFileHeaderSize);
   if (!ofs) {
-    cerr << "MIDIファイルの File Header 出力でエラー\n";
+    cerr << "MIDIファイルの File Header の出力に失敗しました。\n";
     return -1;
   }
   // MainHeader
@@ -369,7 +369,7 @@ int Midi::Save(                                                                 
   mh.time_base = ConvertEndian(time_base_);                                     // 分解能を設定
   ofs.write(reinterpret_cast<char*>(&mh), kMainHeaderSize);
   if (!ofs) {
-    cerr << "MIDIファイルの Main Header 出力でエラー\n";
+    cerr << "MIDIファイルの Main Header の出力に失敗しました。\n";
     return -1;
   }
   // Track
@@ -378,7 +378,7 @@ int Midi::Save(                                                                 
     // 説明：トラックサイズを先に求める必要があるため、先にトラックデータを符号化しておく（ファイル出力は後で）
     stringstream ss;                                                            ///< 一時領域
     if (0 > Encode(ss, track)) {                                                // トラックデータ符号化
-      cerr << "MIDIファイルの出力にてトラックエンコードでエラー\n";
+      cerr << "MIDIファイルの出力時にトラックのエンコードに失敗しました。\n";
       return -1;
     }
     int track_size = static_cast<int>(ss.tellp());                              ///< トラックサイズ取得
@@ -391,13 +391,13 @@ int Midi::Save(                                                                 
     th.track_size = ConvertEndian(track_size);                                  // トラックサイズを設定
     ofs.write(reinterpret_cast<char*>(&th), kTrackHeaderSize);
     if (!ofs) {
-      cerr << "MIDIファイルの Track Header 出力でエラー\n";
+      cerr << "MIDIファイルの Track Header の出力に失敗しました。\n";
       return -1;
     }
     // トラックデータをファイルに流し込む
     ofs << ss.str() << flush;                                                   // 一時領域をファイルに出力
     if (!ofs) {
-      cerr << "MIDIファイルの Track Data 出力でエラー\n";
+      cerr << "MIDIファイルの Track Data の出力に失敗しました。\n";
       return -1;
     }
   }
@@ -481,7 +481,7 @@ int Midi::TimeEncode(                                                           
     data = stk.top();                                                           // スタック取得
     os.write(reinterpret_cast<char*>(&data), 1);                                // 出力
     if (!os) {                                                                  // エラーなら
-      cerr << "デルタタイム出力でエラー\n";
+      cerr << "デルタタイムの出力に失敗しました。\n";
       return -1;                                                                // -1を返す
     }
     stk.pop();                                                                  // スタックから抜く

@@ -1560,14 +1560,14 @@ int Mml::Save(                                                                  
   const auto file_name = EncodeUtf8ForMml(file_name_, midi_text_encoding_);     ///< 出力用MIDIファイル名
   const auto progamer = EncodeUtf8ForMml(programmer_, midi_text_encoding_);     ///< 出力用打ち込み者名
   if (!tool_name || !file_name || !progamer) {                                  // UTF-8由来文字列を変換できなければ
-    cerr << "MMLへ出力する文字列の文字コードを変換できなかった\n";
+    cerr << "MMLへ出力する文字列の文字コードを変換できませんでした。\n";
     return -1;
   }
   const string& title = title_.empty() ? *file_name : title_;                   ///< 出力用タイトル
   // ファイルオープン
   ofstream ofs(file_path, ios::out);                                            ///< 出力ファイルストリーム
   if (!ofs) {
-    cerr << "File Openできなかった\n";
+    cerr << "MMLファイルの出力先を開けませんでした。\n";
     return -1;
   }
   // タイトル情報出力
