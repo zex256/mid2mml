@@ -6,6 +6,7 @@ internal sealed record ConversionSettings
   public int Version { get; init; } = 1;
   public required string ProgramPath { get; init; }
   public required string MidiPath { get; init; }
+  public string PpmckBin { get; init; } = @"D:\mck\bin";
   public required string Channels { get; init; }
   public required int Resolution { get; init; }
   public required decimal Trim { get; init; }

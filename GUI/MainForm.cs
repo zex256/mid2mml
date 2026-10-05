@@ -6,7 +6,7 @@ using System.Text.Json;
 
 namespace mid2mmlGUI;
 
-/// <summary>MIDIからMMLへの変換条件を受け取り、外部コマンドの実行結果を表示するフォーム。</summary>
+/// <summary>MIDIからMML・NSFへの変換条件を受け取り、外部コマンドの実行結果を表示するフォーム。</summary>
 public sealed partial class MainForm : Form
 {
   private const string DefaultChannels = "ABCMNOabFXYZPQRSTUVWGHIJKL";
@@ -57,6 +57,13 @@ public sealed partial class MainForm : Form
         "パスを入力するか、参照ボタン、または1ファイルのドラッグ＆ドロップで選択してください。\n" +
         "変換後の .mml と中間MIDIは入力ファイルと同じフォルダに保存され、\n" +
         "同名ファイルがあれば上書きされます。");
+    _tips.SetToolTip(_ppmckBin,
+        "ppmckc.exe と nesasm.exe があるbinフォルダを指定します。\n" +
+        "親フォルダの nes_include にある ppmck.asm とドライバーを使用します。\n" +
+        "DPCMは入力MIDIのフォルダ、またはppmckの songs\\dmc から探します。");
+    _tips.SetToolTip(_convertNsf,
+        "選択中のMIDIと同名のMMLをNSFへ変換します。先にMMLを生成・保存してください。\n" +
+        "成功時だけ同名のNSFを置き換え、関連付けられたプレーヤーで開きます。");
     _tips.SetToolTip(_channels,
         "MIDIメロディートラックから割当てるppmckのMMLチャンネルを順番に指定します。\n" +
         "指定可能チャンネルは ABCFGHIJKLMNOPQRSTUVWXYZab です。\n" +
@@ -176,6 +183,25 @@ public sealed partial class MainForm : Form
       _programPath.Text = dialog.FileName;
   }
 
+  /// <summary>ppmckのbinフォルダを選択して入力欄に反映する。</summary>
+  private void _browsePpmckBin_Click(object sender, EventArgs e)
+  {
+    using var dialog = new FolderBrowserDialog
+    {
+      Description = "ppmckc.exe と nesasm.exe のあるbinフォルダを選択してください。",
+      UseDescriptionForTitle = true,
+      SelectedPath = _ppmckBin.Text.Trim().Trim('"')
+    };
+    if (dialog.ShowDialog(this) == DialogResult.OK)
+      _ppmckBin.Text = dialog.SelectedPath;
+  }
+
+  /// <summary>ppmckのbin変更を実行予定のコマンド表示に反映する。</summary>
+  private void _ppmckBin_TextChanged(object sender, EventArgs e)
+  {
+    UpdatePreview();
+  }
+
   /// <summary>実行中の変換に中止を要求する。</summary>
   private void _cancel_Click(object sender, EventArgs e)
   {
@@ -235,7 +261,7 @@ public sealed partial class MainForm : Form
         return;
       var settings = JsonSerializer.Deserialize<ConversionSettings>(File.ReadAllText(path));
       if (settings is null || settings.Version != 1 || settings.ProgramPath is null ||
-          settings.MidiPath is null || settings.Channels is null ||
+          settings.MidiPath is null || settings.PpmckBin is null || settings.Channels is null ||
           ValidateChannels(settings.Channels) is not null ||
           !Resolutions.Contains(settings.Resolution) ||
           settings.Trim < _trim.Minimum || settings.Trim > _trim.Maximum ||
@@ -253,6 +279,7 @@ public sealed partial class MainForm : Form
       // パスが現在存在しなくても復元し、変換時の既存チェックで利用可否を確認する。
       _programPath.Text = settings.ProgramPath;
       _midiPath.Text = settings.MidiPath;
+      _ppmckBin.Text = settings.PpmckBin;
       _channels.Text = settings.Channels;
       _resolution.SelectedIndex = Array.IndexOf(Resolutions, settings.Resolution);
       _trim.Value = settings.Trim;
@@ -278,6 +305,7 @@ public sealed partial class MainForm : Form
       {
         ProgramPath = _programPath.Text,
         MidiPath = _midiPath.Text,
+        PpmckBin = _ppmckBin.Text,
         Channels = _channels.Text,
         Resolution = _resolution.SelectedIndex < 0 ? 32 : Resolutions[_resolution.SelectedIndex],
         Trim = _trim.Value,
@@ -369,7 +397,13 @@ public sealed partial class MainForm : Form
       ? "<mid2mml.exe>" : ResolveProgramPath(_programPath.Text);
     string[] arguments = BuildArguments(midi);
     arguments[^1] = QuoteForDisplay(arguments[^1]);
-    _commandPreview.Text = QuoteForDisplay(program) + " " + string.Join(" ", arguments);
+    string bin = _ppmckBin.Text.Trim().Trim('"');
+    string mml = Path.ChangeExtension(midi, ".mml");
+    _commandPreview.Text = QuoteForDisplay(program) + " " + string.Join(" ", arguments)
+      + Environment.NewLine + QuoteForDisplay(Path.Combine(bin, "ppmckc.exe"))
+      + " -i " + QuoteForDisplay(mml) + " song.h"
+      + Environment.NewLine + QuoteForDisplay(Path.Combine(bin, "nesasm.exe"))
+      + " -s -raw ppmck.asm";
   }
 
   /// <summary>画面のオプションを、変換プログラムへ渡す引数の配列に変換する。</summary>
@@ -431,7 +465,8 @@ public sealed partial class MainForm : Form
     // 実行中は設定変更を禁止し、中止要求に使うトークンとプロセスを保持する。
     _log.Clear();
     SaveSettings();
-    AppendLog("実行: " + _commandPreview.Text);
+    AppendLog("実行: " + QuoteForDisplay(program) + " "
+      + string.Join(" ", startInfo.ArgumentList.Select(QuoteForDisplay)));
     _cancelSource = new CancellationTokenSource();
     SetBusy(true);
     SetStatus("変換中…");
@@ -511,6 +546,199 @@ public sealed partial class MainForm : Form
     }
   }
 
+  /// <summary>既存のMMLをNSFへ変換し、成功したファイルを関連付けプレーヤーで開く。</summary>
+  private async void _convertNsf_Click(object sender, EventArgs e)
+  {
+    if (_busy)
+      return;
+
+    // NSF変換はMMLの保存済み内容を使い、MIDIからの再変換は行わない。
+    _log.Clear();
+    _cancelSource = new CancellationTokenSource();
+    SetBusy(true);
+    SetStatus("NSFへ変換中…");
+    try
+    {
+      string midi = Path.GetFullPath(_midiPath.Text.Trim().Trim('"'));
+      string bin = Path.GetFullPath(_ppmckBin.Text.Trim().Trim('"'));
+      ValidateNsfInputs(midi, bin);
+      SaveSettings();
+      string nsf = await BuildNsfAsync(midi, bin, _cancelSource.Token);
+      AppendLog("NSFを生成しました: " + nsf);
+
+      // 生成とプレーヤー起動の成否を分け、関連付けがなくてもNSFは残す。
+      try
+      {
+        using var player = Process.Start(new ProcessStartInfo(nsf) { UseShellExecute = true });
+        AppendLog("関連付けプレーヤーでNSFを開きました: " + nsf);
+        SetStatus("NSF変換完了・プレーヤーを起動しました");
+      }
+      catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
+      {
+        AppendLog("NSFは生成しましたが、関連付けプレーヤーを起動できませんでした: " + ex.Message);
+        SetStatus("NSF変換完了・プレーヤーを起動できませんでした");
+      }
+    }
+    catch (OperationCanceledException)
+    {
+      AppendLog("NSF変換を中止しました。既存のNSFは変更していません。");
+      SetStatus("NSF変換を中止しました");
+    }
+    catch (Exception ex) when (ex is Win32Exception or IOException or InvalidOperationException
+        or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+    {
+      AppendLog("NSF変換に失敗しました: " + ex.Message);
+      SetStatus("NSF変換に失敗しました");
+    }
+    finally
+    {
+      // 失敗・中止・フォーム終了時も、実行状態を確実に解除する。
+      _runningProcess = null;
+      _cancelSource.Dispose();
+      _cancelSource = null;
+      if (!_closing && !IsDisposed)
+        SetBusy(false);
+    }
+  }
+
+  /// <summary>MIDIに対応するMMLと、ppmckの実行ファイル・アセンブリを確認する。</summary>
+  private static void ValidateNsfInputs(string midi, string bin)
+  {
+    if (!File.Exists(midi))
+      throw new FileNotFoundException("入力MIDIファイルを選択してください。", midi);
+    string mml = Path.ChangeExtension(midi, ".mml");
+    if (!File.Exists(mml))
+      throw new FileNotFoundException("MMLが見つかりません。先にMMLへ変換して保存してください: " + mml);
+    foreach (string name in new[] { "ppmckc.exe", "nesasm.exe" })
+    {
+      if (!File.Exists(Path.Combine(bin, name)))
+        throw new FileNotFoundException("ppmckのbinに実行ファイルが見つかりません: " + name);
+    }
+    string assembly = Path.GetFullPath(Path.Combine(bin, "..", "nes_include", "ppmck.asm"));
+    if (!File.Exists(assembly))
+      throw new FileNotFoundException("ppmck.asmが見つかりません: " + assembly);
+  }
+
+  /// <summary>専用の作業フォルダでコンパイル・アセンブルし、有効なNSFだけを出力先へ配置する。</summary>
+  /// <param name="midi">名前と出力先を決める入力MIDIの絶対パス。</param>
+  /// <param name="bin">ppmckc.exeとnesasm.exeのあるフォルダの絶対パス。</param>
+  /// <param name="token">外部コマンドの停止と、次の工程への進行を中止するトークン。</param>
+  /// <returns>生成したNSFの絶対パス。</returns>
+  private async Task<string> BuildNsfAsync(string midi, string bin, CancellationToken token)
+  {
+    ValidateNsfInputs(midi, bin);
+    token.ThrowIfCancellationRequested();
+    string mml = Path.ChangeExtension(midi, ".mml");
+    string nsf = Path.ChangeExtension(midi, ".nsf");
+    string inputDirectory = Path.GetDirectoryName(midi)!;
+    string baseDirectory = Path.GetFullPath(Path.Combine(bin, ".."));
+    string includeDirectory = Path.Combine(baseDirectory, "nes_include");
+    string work = Directory.CreateTempSubdirectory("mid2mml-nsf-").FullName;
+    string stagedNsf = Path.Combine(inputDirectory, ".mid2mml-" + Guid.NewGuid().ToString("N") + ".nsf.tmp");
+    try
+    {
+      // バッチと同じ探索環境を、この2プロセスだけへ渡す。利用者の環境変数は変更しない。
+      var environment = new Dictionary<string, string>
+      {
+        ["PPMCK_BASEDIR"] = baseDirectory,
+        ["NES_INCLUDE"] = includeDirectory,
+        ["DMC_INCLUDE"] = string.Join(";", inputDirectory, Path.Combine(baseDirectory, "songs"),
+          Path.Combine(inputDirectory, "dmc"), Path.Combine(baseDirectory, "songs", "dmc"))
+      };
+      File.Copy(Path.Combine(includeDirectory, "ppmck.asm"), Path.Combine(work, "ppmck.asm"));
+
+      // 出力ヘッダー名も明示し、MMLの隣の既存.hやeffect.hを上書きしない。
+      await RunNsfCommandAsync(Path.Combine(bin, "ppmckc.exe"), ["-i", mml, "song.h"], work, environment, token);
+      if (!File.Exists(Path.Combine(work, "effect.h")) || !File.Exists(Path.Combine(work, "song.h")))
+        throw new IOException("ppmckcは終了しましたが、effect.hまたはsong.hが生成されていません。");
+
+      // nesasmはエラー時に終了コード0を返す版もあるため、出力内容も検査する。
+      await RunNsfCommandAsync(Path.Combine(bin, "nesasm.exe"), ["-s", "-raw", "ppmck.asm"], work, environment, token);
+      string nes = Path.Combine(work, "ppmck.nes");
+      using (var stream = File.OpenRead(nes))
+      {
+        byte[] header = new byte[8];
+        if (stream.Length <= 128 || stream.Read(header) != header.Length ||
+            !header.AsSpan(0, 5).SequenceEqual("NESM\x1A"u8) || header[5] != 1 || header[6] == 0)
+          throw new IOException("ppmck.nesが有効なNSF形式ではないため、既存のNSFは変更しません。");
+      }
+      token.ThrowIfCancellationRequested();
+
+      // 出力先と同じボリュームで最終置換する。コピー失敗・中止では既存NSFを残す。
+      File.Copy(nes, stagedNsf);
+      token.ThrowIfCancellationRequested();
+      File.Move(stagedNsf, nsf, overwrite: true);
+      return nsf;
+    }
+    finally
+    {
+      // この呼び出しで作ったファイルだけを片付け、入力や既存の中間生成物には触れない。
+      try
+      {
+        if (File.Exists(stagedNsf))
+          File.Delete(stagedNsf);
+        Directory.Delete(work, recursive: true);
+      }
+      catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+      {
+        AppendLog("一時ファイルを削除できませんでした: " + work + " / " + ex.Message);
+      }
+    }
+  }
+
+  /// <summary>NSF生成コマンドを起動し、両出力を表示しながら終了・中止を待つ。</summary>
+  private async Task RunNsfCommandAsync(string executable, string[] arguments, string work,
+      Dictionary<string, string> environment, CancellationToken token)
+  {
+    token.ThrowIfCancellationRequested();
+    // 既存のppmckツールはShift-JISで出力するため、MIDI変換CLIとは別にデコードする。
+    Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+    var startInfo = new ProcessStartInfo(executable)
+    {
+      WorkingDirectory = work,
+      UseShellExecute = false,
+      CreateNoWindow = true,
+      RedirectStandardOutput = true,
+      RedirectStandardError = true,
+      StandardOutputEncoding = Encoding.GetEncoding(932),
+      StandardErrorEncoding = Encoding.GetEncoding(932)
+    };
+    foreach (string argument in arguments)
+      startInfo.ArgumentList.Add(argument);
+    foreach (var variable in environment)
+      startInfo.Environment[variable.Key] = variable.Value;
+    AppendLog("実行: " + QuoteForDisplay(executable) + " " + string.Join(" ", arguments.Select(QuoteForDisplay)));
+    using var process = new Process { StartInfo = startInfo };
+    _runningProcess = process;
+    try
+    {
+      if (!process.Start())
+        throw new InvalidOperationException("コマンドを起動できませんでした: " + executable);
+      Task stdout = ShowOutputAsync(process.StandardOutput);
+      Task stderr = ShowOutputAsync(process.StandardError);
+      try
+      {
+        await process.WaitForExitAsync(token);
+      }
+      catch (OperationCanceledException)
+      {
+        StopRunningProcess();
+        await process.WaitForExitAsync();
+        await Task.WhenAll(stdout, stderr);
+        throw;
+      }
+      await Task.WhenAll(stdout, stderr);
+      token.ThrowIfCancellationRequested();
+      if (process.ExitCode != 0)
+        throw new InvalidOperationException(Path.GetFileName(executable) +
+          $"が失敗しました（終了コード {process.ExitCode}）。");
+    }
+    finally
+    {
+      _runningProcess = null;
+    }
+  }
+
   /// <summary>外部プロセスの出力を一行ずつ読み、ログ欄へ表示する。</summary>
   /// <param name="reader">標準出力または標準エラーの読み取り元。</param>
   private async Task ShowOutputAsync(StreamReader reader)
@@ -542,6 +770,7 @@ public sealed partial class MainForm : Form
     _optionsGroup.Enabled = !busy;
     _reset.Enabled = !busy;
     _convert.Enabled = !busy;
+    _convertNsf.Enabled = !busy;
     _convert.Text = busy ? "変換中…" : "MMLへ変換";
     _cancel.Enabled = busy;
   }

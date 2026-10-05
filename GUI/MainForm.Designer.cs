@@ -17,6 +17,9 @@ namespace mid2mmlGUI
             midiLabel = new Label();
             _midiPath = new TextBox();
             _browseMidi = new Button();
+            ppmckBinLabel = new Label();
+            _ppmckBin = new TextBox();
+            _browsePpmckBin = new Button();
             _optionsGroup = new GroupBox();
             optionColumns = new TableLayoutPanel();
             noteGrid = new TableLayoutPanel();
@@ -46,6 +49,7 @@ namespace mid2mmlGUI
             _reset = new Button();
             _cancel = new Button();
             _convert = new Button();
+            _convertNsf = new Button();
             logGroup = new GroupBox();
             _log = new RichTextBox();
             root.SuspendLayout();
@@ -80,12 +84,12 @@ namespace mid2mmlGUI
             root.Padding = new Padding(12);
             root.RowCount = 6;
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 101F));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 131F));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 217F));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 75F));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 105F));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            root.Size = new Size(1004, 741);
+            root.Size = new Size(1004, 801);
             root.TabIndex = 0;
             // 
             // heading
@@ -107,7 +111,7 @@ namespace mid2mmlGUI
             _inputGroup.Location = new Point(15, 63);
             _inputGroup.Name = "_inputGroup";
             _inputGroup.Padding = new Padding(8, 12, 8, 7);
-            _inputGroup.Size = new Size(974, 95);
+            _inputGroup.Size = new Size(974, 125);
             _inputGroup.TabIndex = 1;
             _inputGroup.TabStop = false;
             _inputGroup.Text = "入力と変換プログラム";
@@ -118,71 +122,75 @@ namespace mid2mmlGUI
             inputGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130F));
             inputGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             inputGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 105F));
-            inputGrid.Controls.Add(programLabel, 0, 0);
-            inputGrid.Controls.Add(_programPath, 1, 0);
-            inputGrid.Controls.Add(_browseProgram, 2, 0);
-            inputGrid.Controls.Add(midiLabel, 0, 1);
-            inputGrid.Controls.Add(_midiPath, 1, 1);
-            inputGrid.Controls.Add(_browseMidi, 2, 1);
+            inputGrid.Controls.Add(midiLabel, 0, 0);
+            inputGrid.Controls.Add(_midiPath, 1, 0);
+            inputGrid.Controls.Add(_browseMidi, 2, 0);
+            inputGrid.Controls.Add(programLabel, 0, 1);
+            inputGrid.Controls.Add(_programPath, 1, 1);
+            inputGrid.Controls.Add(_browseProgram, 2, 1);
+            inputGrid.Controls.Add(ppmckBinLabel, 0, 2);
+            inputGrid.Controls.Add(_ppmckBin, 1, 2);
+            inputGrid.Controls.Add(_browsePpmckBin, 2, 2);
             inputGrid.Dock = DockStyle.Fill;
             inputGrid.Location = new Point(8, 28);
             inputGrid.Name = "inputGrid";
             inputGrid.Padding = new Padding(5, 0, 5, 0);
-            inputGrid.RowCount = 2;
+            inputGrid.RowCount = 3;
             inputGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
             inputGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
-            inputGrid.Size = new Size(958, 60);
+            inputGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
+            inputGrid.Size = new Size(958, 90);
             inputGrid.TabIndex = 0;
             // 
             // programLabel
             // 
             programLabel.Dock = DockStyle.Fill;
-            programLabel.Location = new Point(8, 0);
+            programLabel.Location = new Point(8, 30);
             programLabel.Name = "programLabel";
             programLabel.Size = new Size(124, 30);
-            programLabel.TabIndex = 0;
+            programLabel.TabIndex = 3;
             programLabel.Text = "変換プログラム";
             programLabel.TextAlign = ContentAlignment.MiddleLeft;
             // 
             // _programPath
             // 
             _programPath.Anchor = AnchorStyles.Left | AnchorStyles.Right;
-            _programPath.Location = new Point(138, 3);
+            _programPath.Location = new Point(138, 33);
             _programPath.Name = "_programPath";
             _programPath.Size = new Size(707, 23);
-            _programPath.TabIndex = 1;
+            _programPath.TabIndex = 4;
             _programPath.Text = "mid2mml.exe";
             _programPath.TextChanged += _programPath_TextChanged;
             // 
             // _browseProgram
             // 
             _browseProgram.Dock = DockStyle.Fill;
-            _browseProgram.Location = new Point(851, 3);
+            _browseProgram.Location = new Point(851, 33);
             _browseProgram.Name = "_browseProgram";
             _browseProgram.Size = new Size(99, 24);
-            _browseProgram.TabIndex = 2;
+            _browseProgram.TabIndex = 5;
             _browseProgram.Text = "参照…";
             _browseProgram.Click += _browseProgram_Click;
             // 
             // midiLabel
             // 
             midiLabel.Dock = DockStyle.Fill;
-            midiLabel.Location = new Point(8, 30);
+            midiLabel.Location = new Point(8, 0);
             midiLabel.Name = "midiLabel";
             midiLabel.Size = new Size(124, 30);
-            midiLabel.TabIndex = 3;
-            midiLabel.Text = "入力MIDI";
+            midiLabel.TabIndex = 0;
+            midiLabel.Text = "入力MIDIファイル";
             midiLabel.TextAlign = ContentAlignment.MiddleLeft;
             // 
             // _midiPath
             // 
             _midiPath.Anchor = AnchorStyles.Left | AnchorStyles.Right;
             _midiPath.AllowDrop = true;
-            _midiPath.Location = new Point(138, 33);
+            _midiPath.Location = new Point(138, 3);
             _midiPath.Name = "_midiPath";
             _midiPath.PlaceholderText = "MIDIファイルを選択してください";
             _midiPath.Size = new Size(707, 23);
-            _midiPath.TabIndex = 4;
+            _midiPath.TabIndex = 1;
             _midiPath.TextChanged += _midiPath_TextChanged;
             _midiPath.DragEnter += _midiPath_DragEnter;
             _midiPath.DragDrop += _midiPath_DragDrop;
@@ -190,18 +198,48 @@ namespace mid2mmlGUI
             // _browseMidi
             // 
             _browseMidi.Dock = DockStyle.Fill;
-            _browseMidi.Location = new Point(851, 33);
+            _browseMidi.Location = new Point(851, 3);
             _browseMidi.Name = "_browseMidi";
             _browseMidi.Size = new Size(99, 24);
-            _browseMidi.TabIndex = 5;
+            _browseMidi.TabIndex = 2;
             _browseMidi.Text = "参照…";
             _browseMidi.Click += _browseMidi_Click;
+            //
+            // ppmckBinLabel
+            //
+            ppmckBinLabel.Dock = DockStyle.Fill;
+            ppmckBinLabel.Location = new Point(8, 60);
+            ppmckBinLabel.Name = "ppmckBinLabel";
+            ppmckBinLabel.Size = new Size(124, 30);
+            ppmckBinLabel.TabIndex = 6;
+            ppmckBinLabel.Text = "ppmckのbin";
+            ppmckBinLabel.TextAlign = ContentAlignment.MiddleLeft;
+            //
+            // _ppmckBin
+            //
+            _ppmckBin.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+            _ppmckBin.Location = new Point(138, 63);
+            _ppmckBin.Name = "_ppmckBin";
+            _ppmckBin.Size = new Size(707, 23);
+            _ppmckBin.TabIndex = 7;
+            _ppmckBin.Text = "D:\\mck\\bin";
+            _ppmckBin.TextChanged += _ppmckBin_TextChanged;
+            //
+            // _browsePpmckBin
+            //
+            _browsePpmckBin.Dock = DockStyle.Fill;
+            _browsePpmckBin.Location = new Point(851, 63);
+            _browsePpmckBin.Name = "_browsePpmckBin";
+            _browsePpmckBin.Size = new Size(99, 24);
+            _browsePpmckBin.TabIndex = 8;
+            _browsePpmckBin.Text = "参照…";
+            _browsePpmckBin.Click += _browsePpmckBin_Click;
             // 
             // _optionsGroup
             // 
             _optionsGroup.Controls.Add(optionColumns);
             _optionsGroup.Dock = DockStyle.Fill;
-            _optionsGroup.Location = new Point(15, 164);
+            _optionsGroup.Location = new Point(15, 194);
             _optionsGroup.Name = "_optionsGroup";
             _optionsGroup.Padding = new Padding(8, 12, 8, 7);
             _optionsGroup.Size = new Size(974, 211);
@@ -475,10 +513,10 @@ namespace mid2mmlGUI
             // 
             commandGroup.Controls.Add(_commandPreview);
             commandGroup.Dock = DockStyle.Fill;
-            commandGroup.Location = new Point(15, 381);
+            commandGroup.Location = new Point(15, 411);
             commandGroup.Name = "commandGroup";
             commandGroup.Padding = new Padding(8, 12, 8, 7);
-            commandGroup.Size = new Size(974, 69);
+            commandGroup.Size = new Size(974, 99);
             commandGroup.TabIndex = 3;
             commandGroup.TabStop = false;
             commandGroup.Text = "実行コマンド表示（確認用）";
@@ -491,22 +529,24 @@ namespace mid2mmlGUI
             _commandPreview.Name = "_commandPreview";
             _commandPreview.ReadOnly = true;
             _commandPreview.ScrollBars = ScrollBars.Vertical;
-            _commandPreview.Size = new Size(958, 34);
+            _commandPreview.Size = new Size(958, 64);
             _commandPreview.TabIndex = 0;
             // 
             // actions
             // 
-            actions.ColumnCount = 4;
+            actions.ColumnCount = 5;
             actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130F));
             actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 95F));
+            actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 145F));
             actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 145F));
             actions.Controls.Add(_status, 0, 0);
             actions.Controls.Add(_reset, 1, 0);
             actions.Controls.Add(_cancel, 2, 0);
             actions.Controls.Add(_convert, 3, 0);
+            actions.Controls.Add(_convertNsf, 4, 0);
             actions.Dock = DockStyle.Fill;
-            actions.Location = new Point(15, 456);
+            actions.Location = new Point(15, 516);
             actions.Name = "actions";
             actions.Padding = new Padding(5);
             actions.RowCount = 1;
@@ -519,7 +559,7 @@ namespace mid2mmlGUI
             _status.Dock = DockStyle.Fill;
             _status.Location = new Point(8, 5);
             _status.Name = "_status";
-            _status.Size = new Size(588, 32);
+            _status.Size = new Size(443, 32);
             _status.TabIndex = 0;
             _status.Text = "MIDIファイルを選択してください";
             _status.TextAlign = ContentAlignment.MiddleLeft;
@@ -527,7 +567,7 @@ namespace mid2mmlGUI
             // _reset
             // 
             _reset.Dock = DockStyle.Fill;
-            _reset.Location = new Point(602, 8);
+            _reset.Location = new Point(457, 8);
             _reset.Name = "_reset";
             _reset.Size = new Size(124, 26);
             _reset.TabIndex = 1;
@@ -538,7 +578,7 @@ namespace mid2mmlGUI
             // 
             _cancel.Dock = DockStyle.Fill;
             _cancel.Enabled = false;
-            _cancel.Location = new Point(732, 8);
+            _cancel.Location = new Point(587, 8);
             _cancel.Name = "_cancel";
             _cancel.Size = new Size(89, 26);
             _cancel.TabIndex = 2;
@@ -551,19 +591,33 @@ namespace mid2mmlGUI
             _convert.Dock = DockStyle.Fill;
             _convert.FlatStyle = FlatStyle.Flat;
             _convert.ForeColor = Color.White;
-            _convert.Location = new Point(827, 8);
+            _convert.Location = new Point(682, 8);
             _convert.Name = "_convert";
             _convert.Size = new Size(139, 26);
             _convert.TabIndex = 3;
             _convert.Text = "MMLへ変換";
             _convert.UseVisualStyleBackColor = false;
             _convert.Click += _convert_Click;
+            //
+            // _convertNsf
+            //
+            _convertNsf.BackColor = Color.FromArgb(34, 100, 160);
+            _convertNsf.Dock = DockStyle.Fill;
+            _convertNsf.FlatStyle = FlatStyle.Flat;
+            _convertNsf.ForeColor = Color.White;
+            _convertNsf.Location = new Point(827, 8);
+            _convertNsf.Name = "_convertNsf";
+            _convertNsf.Size = new Size(139, 26);
+            _convertNsf.TabIndex = 4;
+            _convertNsf.Text = "NSFへ変換";
+            _convertNsf.UseVisualStyleBackColor = false;
+            _convertNsf.Click += _convertNsf_Click;
             // 
             // logGroup
             // 
             logGroup.Controls.Add(_log);
             logGroup.Dock = DockStyle.Fill;
-            logGroup.Location = new Point(15, 504);
+            logGroup.Location = new Point(15, 564);
             logGroup.Name = "logGroup";
             logGroup.Padding = new Padding(8, 12, 8, 7);
             logGroup.Size = new Size(974, 222);
@@ -589,10 +643,10 @@ namespace mid2mmlGUI
             // 
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            ClientSize = new Size(1004, 741);
+            ClientSize = new Size(1004, 801);
             Controls.Add(root);
             Font = new Font("Yu Gothic UI", 9F);
-            MinimumSize = new Size(860, 710);
+            MinimumSize = new Size(860, 770);
             Name = "MainForm";
             StartPosition = FormStartPosition.CenterScreen;
             Text = "mid2mmlGUI";
@@ -626,6 +680,9 @@ namespace mid2mmlGUI
     private Label midiLabel;
     private TextBox _midiPath;
     private Button _browseMidi;
+    private Label ppmckBinLabel;
+    private TextBox _ppmckBin;
+    private Button _browsePpmckBin;
     private GroupBox _optionsGroup;
     private TableLayoutPanel optionColumns;
     private TableLayoutPanel noteGrid;
@@ -655,6 +712,7 @@ namespace mid2mmlGUI
     private Button _reset;
     private Button _cancel;
     private Button _convert;
+    private Button _convertNsf;
     private GroupBox logGroup;
     private RichTextBox _log;
   }
