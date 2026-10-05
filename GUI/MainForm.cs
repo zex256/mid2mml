@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.Text;
+using System.Text.Json;
 
 namespace mid2mmlGUI;
 
@@ -26,8 +27,9 @@ public sealed partial class MainForm : Form
     if (LicenseManager.UsageMode == LicenseUsageMode.Designtime)
       return;
 
-    // 入力値と数値範囲はデザイナーで設定し、実行時は説明とプレビューだけを整える。
+    // 初回の値と数値範囲はデザイナーで設定し、保存済みの値があれば復元する。
     ConfigureToolTips();
+    LoadSettings();
     UpdatePreview();
   }
 
@@ -52,7 +54,7 @@ public sealed partial class MainForm : Form
         "別の場所にある場合は、フルパスを入力するか参照ボタンから選択してください。");
     _tips.SetToolTip(_midiPath,
         "変換元のMIDIファイル（.mid または .smf）を指定します。\n" +
-        "ファイルのパスを入力するか、参照ボタンから選択してください。\n" +
+        "パスを入力するか、参照ボタン、または1ファイルのドラッグ＆ドロップで選択してください。\n" +
         "変換後の .mml と中間MIDIは入力ファイルと同じフォルダに保存され、\n" +
         "同名ファイルがあれば上書きされます。");
     _tips.SetToolTip(_channels,
@@ -117,11 +119,13 @@ public sealed partial class MainForm : Form
         "その音符ではピッチエンベロープを無効にします。\n" +
         "0を指定した場合、ピッチエンベロープを定義しません。");
     _tips.SetToolTip(_pitchThreshold,
-        "ピッチエンベロープを定義する条件として最低限の変化量を指定します。\n" +
-        "ピッチエンベロープの最大値と最小値の差がこの閾値未満なら定義しません。\n" +
+        "MIDI側の最低音程変化幅をセント単位で指定します。100セント＝1半音です。\n" +
+        "RPNのベンド範囲を反映した偏差の最大値－最小値が閾値未満なら定義しません。\n" +
+        "基準音程の0セントも含めるため、発音開始時から一定のベンドも判定対象です。\n" +
+        "音源やノート番号によらず同じ基準で判定します。\n" +
         "これは微細な変化では定義しないことにより、定義数を抑制するための機能です。\n" +
         "（ピッチエンベロープ値の範囲を制限するものではありません。）\n" +
-        "指定可能な値は0～65535、既定値は5です。\n" +
+        "指定可能な値は0～65535セント、既定値は5セントです。\n" +
         "0を指定すると、変化量による登録除外を行いません。");
     // 出力先と上書きの説明は、入力欄のほかラベルと参照ボタンでも確認できるようにする。
     const string outputTip = "入力と同じフォルダに .mml と中間MIDIを保存します。同名ファイルは上書きされます。";
@@ -189,6 +193,113 @@ public sealed partial class MainForm : Form
   private void _midiPath_TextChanged(object sender, EventArgs e)
   {
     UpdatePreview();
+  }
+
+  /// <summary>入力MIDI欄へ既存の.mid/.smfを1つドラッグした場合だけコピーを許可する。</summary>
+  private void _midiPath_DragEnter(object sender, DragEventArgs e)
+  {
+    e.Effect = !_busy && (e.AllowedEffect & DragDropEffects.Copy) != 0
+      && DroppedMidiPath(e.Data) is not null ? DragDropEffects.Copy : DragDropEffects.None;
+  }
+
+  /// <summary>ドロップされたMIDIを再検査し、入力欄へ反映する。</summary>
+  private void _midiPath_DragDrop(object sender, DragEventArgs e)
+  {
+    if (!_busy && DroppedMidiPath(e.Data) is { } path)
+      _midiPath.Text = path;
+  }
+
+  /// <summary>複数ファイル、フォルダ、未対応拡張子は受け付けず、有効なMIDIパスを返す。</summary>
+  private static string? DroppedMidiPath(IDataObject? data)
+  {
+    if (data?.GetData(DataFormats.FileDrop) is not string[] { Length: 1 } paths)
+      return null;
+    string extension = Path.GetExtension(paths[0]);
+    return File.Exists(paths[0]) &&
+      (extension.Equals(".mid", StringComparison.OrdinalIgnoreCase) ||
+       extension.Equals(".smf", StringComparison.OrdinalIgnoreCase)) ? paths[0] : null;
+  }
+
+  /// <summary>EXE配置先の書き込み権限に依存しない、ユーザー別の設定保存先。</summary>
+  private static string SettingsPath => Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+    "mid2mmlGUI", "settings.json");
+
+  /// <summary>保存データ全体を検証してから画面へ復元する。不正な場合は既定値を維持する。</summary>
+  private void LoadSettings(string? path = null)
+  {
+    try
+    {
+      path ??= SettingsPath;
+      if (!File.Exists(path))
+        return;
+      var settings = JsonSerializer.Deserialize<ConversionSettings>(File.ReadAllText(path));
+      if (settings is null || settings.Version != 1 || settings.ProgramPath is null ||
+          settings.MidiPath is null || settings.Channels is null ||
+          ValidateChannels(settings.Channels) is not null ||
+          !Resolutions.Contains(settings.Resolution) ||
+          settings.Trim < _trim.Minimum || settings.Trim > _trim.Maximum ||
+          settings.VolumeMode < 0 || settings.VolumeMode >= _volumeMode.Items.Count ||
+          settings.VolumeThreshold < _volumeThreshold.Minimum || settings.VolumeThreshold > _volumeThreshold.Maximum ||
+          settings.PitchLimit < _pitchLimit.Minimum || settings.PitchLimit > _pitchLimit.Maximum ||
+          settings.PitchThreshold < _pitchThreshold.Minimum || settings.PitchThreshold > _pitchThreshold.Maximum ||
+          decimal.Truncate(settings.Trim) != settings.Trim ||
+          decimal.Truncate(settings.VolumeThreshold) != settings.VolumeThreshold ||
+          decimal.Truncate(settings.PitchLimit) != settings.PitchLimit ||
+          decimal.Truncate(settings.PitchThreshold) != settings.PitchThreshold ||
+          settings.DrumMode < 0 || settings.DrumMode >= _drumMode.Items.Count)
+        throw new JsonException("保存された設定値が範囲外、または未対応の形式です。");
+
+      // パスが現在存在しなくても復元し、変換時の既存チェックで利用可否を確認する。
+      _programPath.Text = settings.ProgramPath;
+      _midiPath.Text = settings.MidiPath;
+      _channels.Text = settings.Channels;
+      _resolution.SelectedIndex = Array.IndexOf(Resolutions, settings.Resolution);
+      _trim.Value = settings.Trim;
+      _volumeMode.SelectedIndex = settings.VolumeMode;
+      _volumeThreshold.Value = settings.VolumeThreshold;
+      _pitchLimit.Value = settings.PitchLimit;
+      _pitchThreshold.Value = settings.PitchThreshold;
+      _mergeDrums.Checked = settings.MergeDrums;
+      _drumMode.SelectedIndex = settings.DrumMode;
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+    {
+      AppendLog("設定を読み込めませんでした。初期値を使用します: " + ex.Message);
+    }
+  }
+
+  /// <summary>変換開始時の画面をJSONへ保存し、一時ファイルから置き換えて破損を防ぐ。</summary>
+  private void SaveSettings(string? path = null)
+  {
+    try
+    {
+      var settings = new ConversionSettings
+      {
+        ProgramPath = _programPath.Text,
+        MidiPath = _midiPath.Text,
+        Channels = _channels.Text,
+        Resolution = _resolution.SelectedIndex < 0 ? 32 : Resolutions[_resolution.SelectedIndex],
+        Trim = _trim.Value,
+        VolumeMode = _volumeMode.SelectedIndex,
+        VolumeThreshold = _volumeThreshold.Value,
+        PitchLimit = _pitchLimit.Value,
+        PitchThreshold = _pitchThreshold.Value,
+        MergeDrums = _mergeDrums.Checked,
+        DrumMode = _drumMode.SelectedIndex
+      };
+      path ??= SettingsPath;
+      Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+      string temporary = path + ".tmp";
+      File.WriteAllText(temporary, JsonSerializer.Serialize(settings,
+        new JsonSerializerOptions { WriteIndented = true }));
+      File.Move(temporary, path, overwrite: true);
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+    {
+      // 設定保存が失敗しても変換は続行し、失敗したことをログへ残す。
+      AppendLog("設定を保存できませんでした: " + ex.Message);
+    }
   }
 
   /// <summary>チャンネル指定を検証し、結果と実行コマンドの表示を更新する。</summary>
@@ -319,6 +430,7 @@ public sealed partial class MainForm : Form
 
     // 実行中は設定変更を禁止し、中止要求に使うトークンとプロセスを保持する。
     _log.Clear();
+    SaveSettings();
     AppendLog("実行: " + _commandPreview.Text);
     _cancelSource = new CancellationTokenSource();
     SetBusy(true);

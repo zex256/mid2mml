@@ -43,6 +43,7 @@ class Midi {
   /** @brief MIDIイベントを時間順に保持する制御情報 */
   struct Operate {
     uint32_t time;                                                              ///< 直前の制御からの時間
+    double precise_time{-1};                                                    ///< 分解能変更時に保存する丸め前の絶対tick（未保存は-1）
     uint8_t status;                                                             ///< ステータス
     uint8_t status1;                                                            ///< ステータス1
     uint8_t status2;                                                            ///< ステータス2
@@ -68,14 +69,13 @@ class Midi {
           status2(status2),
           ex_data(move(ex_data)) {}
 
-    /** @brief MIDIイベントを時間・チャンネル・音程順に比較する */
-    bool operator<(                                                             // MIDIイベントを時間・チャンネル・音程順に比較する
+    /** @brief MIDIイベントを時間・チャンネル順に比較し、同時刻の入力順を保持する */
+    bool operator<(                                                             // MIDIイベントを時間・チャンネル順に比較する
         const Operate& other) const noexcept {                                  ///< (i)比較対象イベント
-      // 絶対時間により判定するが同じ時間の場合はチャンネルで判定する
-      const auto channel = status & 0x0f;                                       ///< 現在イベントのMIDIチャンネル
-      const auto other_channel = other.status & 0x0f;                           ///< 比較対象イベントのMIDIチャンネル
-      return time != other.time ? time < other.time : channel != other_channel
-             ? channel < other_channel : (0x0f & status1) < (0x0f & other.status1); // それも同じなら低音順
+      // 同一チャンネル・同時刻のRPNやベンドは、安定ソートで入力順を維持する。
+      const auto channel = status & 0x0f;                                       ///< ステータスの下位4bit（0x0f）から取得したMIDIチャンネル
+      const auto other_channel = other.status & 0x0f;                           ///< 比較対象の下位4bitから取得したMIDIチャンネル
+      return time != other.time ? time < other.time : channel < other_channel;  // 時刻を優先し、同時刻ならチャンネル番号で比較する
     // return ( time < other.time );
     }
 /* 非効率なのでやめた

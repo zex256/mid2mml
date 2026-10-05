@@ -177,12 +177,15 @@ namespace mid2mmlGUI
             // _midiPath
             // 
             _midiPath.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+            _midiPath.AllowDrop = true;
             _midiPath.Location = new Point(138, 33);
             _midiPath.Name = "_midiPath";
             _midiPath.PlaceholderText = "MIDIファイルを選択してください";
             _midiPath.Size = new Size(707, 23);
             _midiPath.TabIndex = 4;
             _midiPath.TextChanged += _midiPath_TextChanged;
+            _midiPath.DragEnter += _midiPath_DragEnter;
+            _midiPath.DragDrop += _midiPath_DragDrop;
             // 
             // _browseMidi
             // 
@@ -454,7 +457,7 @@ namespace mid2mmlGUI
             pitchThresholdLabel.Name = "pitchThresholdLabel";
             pitchThresholdLabel.Size = new Size(198, 34);
             pitchThresholdLabel.TabIndex = 6;
-            pitchThresholdLabel.Text = "ピッチ最低変化量閾値 -pt";
+            pitchThresholdLabel.Text = "ピッチ最低変化量(cent) -pt";
             pitchThresholdLabel.TextAlign = ContentAlignment.MiddleRight;
             // 
             // _pitchThreshold

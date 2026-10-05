@@ -33,7 +33,7 @@ struct ConverterOptions {
   Mml::VolumeMode volume_mode{Mml::VolumeMode::kToneAndVariable};               ///< 音量モード
   uint16_t volume_definition_threshold{60};                                     ///< 音量定義数の間引き閾値
   uint16_t pitch_envelope_limit{15};                                            ///< ピッチ最大定義数
-  uint16_t pitch_envelope_threshold{5};                                         ///< ピッチ最低変化量閾値
+  uint16_t pitch_envelope_threshold{5};                                         ///< ピッチ最低変化量閾値（セント）
   double repeated_note_trim_ratio{0.25};                                        ///< 重複音符の切詰率
   bool merge_percussion_to_channel_9{true};                                     ///< 打楽器チャンネル統合
   DrumMode drum_mode{DrumMode::kNoiseAndDpcm};                                  ///< 打楽器音源割当モード
@@ -230,7 +230,7 @@ optional<ConverterOptions> ConverterOptions::Parse(                             
           error_message = InvalidOption(arg, "ピッチエンベロープ登録数は0～128で指定してください");
           return nullopt;
         }
-      } else if (tolower(static_cast<unsigned char>(arg[2])) == 't') {          // ピッチ最低変化量閾値 -pt0～65535
+      } else if (tolower(static_cast<unsigned char>(arg[2])) == 't') {          // ピッチ最低変化量閾値 -pt0～65535（セント）
         if (!ParseUnsigned(arg.substr(3), options.pitch_envelope_threshold)) {  // ピッチ最低変化量閾値が不正なら
           error_message = InvalidOption(arg, "ピッチエンベロープ閾値は0～65535の整数で指定してください");
           return nullopt;

@@ -1,7 +1,7 @@
 // MMLクラス
 #include "mml.h"
 
-#include <math.h>                                                               // 乗数計算に使用
+#include <cmath>                                                                // 周波数比とレジスタ差分の計算に使用
 
 #include <algorithm>                                                            // replaceとかで使用
 #include <cstdlib>                                                              // 環境変数取得用
@@ -12,13 +12,6 @@ using std::cerr, std::getenv, std::istringstream, std::ios;
 using std::map, std::ofstream, std::ostream, std::ostringstream;
 using std::pow, std::size_t, std::string;
 using std::uint16_t, std::uint32_t, std::uint8_t, std::vector;
-
-namespace {
-
-constexpr double kNesMasterClock = 21477272.7272;                               // ファミコンのマスタークロック
-constexpr double kNesSystemClock = kNesMasterClock / 12.0;                      // ファミコンのシステムクロック
-
-}                                                                               // namespace
 
 /**
  * @brief MIDIクラスから必要な情報を読み込み、MML用中間情報を作成する
@@ -75,21 +68,64 @@ void Mml::Load(                                                                 
     uint8_t prg_no(0);                                                          ///< プログラム(音色)番号
     uint8_t prev_prg_no(255);                                                   ///< １つ前の音符のプログラム(音色)番号
     // ↓ピッチエンヴェロープ用
-    uint8_t rpn_lsb(0);                                                         ///< RPN LSB(コントロールチェンジ100)
-    uint8_t rpn_msb(0);                                                         ///< RPN MSB(コントロールチェンジ101)
+    uint8_t rpn_lsb(127);                                                       ///< RPN LSB（初期状態は未選択）
+    uint8_t rpn_msb(127);                                                       ///< RPN MSB（初期状態は未選択）
     uint8_t pitch_bend_sensitivity(2);                                          ///< ピッチベンドセンシティヴィティ
+    uint8_t pitch_bend_cents(0);                                                ///< ベンド範囲のセント部分
     short pitch_bend(0);                                                        ///< ピッチベンド(範囲-8192～0～8191)
-    uint32_t prev_pitch_frequency(0);                                           ///< 直前のピッチ周波数（レジスタ値）
     int inside_note(0);                                                         ///< 音符中 0:音符外 1:音符内
-    vector<char> pitch_envelope;                                                ///< ピッチエンべロープ
+    map<uint32_t, int> pitch_targets;                                           ///< フレームごとの目標EP累積値
+    double pitch_min_cents = 0;                                                 ///< 中央を0として記録した、発音中のMIDI音程偏差の最小値（セント）
+    double pitch_max_cents = 0;                                                 ///< 中央を0として記録した、発音中のMIDI音程偏差の最大値（セント）
+    bool pitch_range_warned(false);                                             ///< 音符ごとの値域警告の重複を防ぐ
     string prev_e_pcommand("EPOF");                                             ///< 直前のEPコマンド
     // ↑ピッチエンヴェロープ用
+    // ベンドの目標値を記録する。同一フレームでは最後のイベントを採用する。
+    const auto record_pitch = [&](uint32_t frame) {                             ///< 指定フレームのベンド目標を記録するラムダ
+      const double fraction = pitch_bend / (pitch_bend < 0 ? 8192.0 : 8191.0);  ///< 負側8192・正側8191を最大幅とするMIDIベンド割合
+      const double cents =
+          (pitch_bend_sensitivity * 100.0 + pitch_bend_cents) * fraction;       ///< 1半音＝100セントとしてRPN範囲を反映した音程偏差
+      pitch_min_cents = std::min(pitch_min_cents, cents);                       // 音源のレジスタ制限前にMIDI側の最小偏差を記録する
+      pitch_max_cents = std::max(pitch_max_cents, cents);                       // 音源のレジスタ制限前にMIDI側の最大偏差を記録する
+      const uint8_t key = note_on->status1;                                     ///< 発音中のMIDIキー番号
+      const int base = static_cast<int>(NoteFrequencyCalc(key, mml_ch));        ///< ベンドなしでppmckが設定する周波数レジスタ値
+      int offset = PitchOffsetCalc(key, mml_ch,                                 ///< 正数で高音となるEPの目標累積変化量
+          pitch_bend_sensitivity + pitch_bend_cents / 100.0, pitch_bend);       // 100セント＝1半音として、整数半音とセント部分を合算する
+      const bool direct = mml_ch == 'F' || ('G' <= mml_ch && mml_ch <= 'L') ||  ///< 周波数とレジスタ値が比例する音源かどうか
+                          ('P' <= mml_ch && mml_ch <= 'W');                     // FDS・VRC7・N106はレジスタ増加で高音となる
+      const int sign = direct ? 1 : -1;                                         ///< 比例音源は加算、タイマ音源は減算するための符号
+      const int scale = ('P' <= mml_ch && mml_ch <= 'W') ? 128 : 1;             ///< N106のSA7は1EP単位＝2^7＝128レジスタ単位、他音源は1単位
+      const int maximum = scale == 128 ? 262143 :                               ///< 音源のレジスタ上限。N106は18bitの最大値262143
+          ('G' <= mml_ch && mml_ch <= 'L') ? 511 :                              // VRC7のF-numberは9bitなので最大511
+          (mml_ch == 'F' || ('M' <= mml_ch && mml_ch <= 'O') ||                 // FDS・VRC6・FME7は12bit、その他は11bit
+           ('X' <= mml_ch && mml_ch <= 'Z')) ? 4095 : 2047;                     // 12bitの最大値4095、11bitの最大値2047を選ぶ
+      const int minimum =
+          direct ? 0 : (mml_ch == 'A' || mml_ch == 'B') ? 8 : 1;                ///< 比例音源は0、2A03矩形波は消音を避ける8、他タイマ音源は1が下限
+      const int target = base + sign * offset * scale;                          ///< 基準値へEPの符号とSA倍率を反映した変化量を加える
+      const int limited = std::clamp(target, minimum, maximum);                 ///< 音源のレジスタ値域に収めた目標値
+      if (target != limited) {                                                  // 要求した音程が音源のレジスタ値域を超えた場合
+        if (!pitch_range_warned) {                                              // この音符ではまだ値域の警告を出していない場合
+          cerr << "Ch." << static_cast<char>(mml_ch) << "のピッチベンドが音源のレジスタ範囲を超えるため、範囲内に制限します。\n";
+          pitch_range_warned = true;                                            // 同じ音符の後続ベンドでは値域警告を重複させない
+        }
+        offset = sign * (limited - base) / scale;                               // 制限後のレジスタ差分を、音程方向を揃えたEP単位へ戻す
+      }
+      pitch_targets[frame] = offset;                                            // 同一フレームの目標累積値を最後のベンドで上書きする
+    };
+    // 出力音符の開始tickを基準に、丸め前のベンド時刻を60Hzへ変換する。
+    const auto pitch_frame = [&](const Midi::Operate& event) {                  ///< 丸め前のイベント時刻からEPフレーム位置を求めるラムダ
+      const double time =
+          event.precise_time < 0 ? event.time : event.precise_time;             ///< 丸め前の絶対tick。負数は未保存を示すので通常の時刻を使う
+      const double frames =
+          3600.0 / tempo * std::max(0.0, time - note_on->time) / time_base_;    ///< 60Hz×60秒＝3600フレーム/分から、発音後のtickをフレーム数へ換算する
+      return static_cast<uint32_t>(std::min(frames, 4294967294.0));             // 負の経過時間は0とし、uint32_t最大値より1小さい4294967294までに収める
+    };
     // 制御リストループ
     for (auto ope_it  = track.begin();
               ope_it != track.end(); ++ope_it) {                                // 制御リストループ
       const Midi::Operate& ope = *ope_it;                                       ///< 現在のMIDIイベント
       uint8_t sta = 0xF0 & ope.status;                                          ///< イベント抽出
-      switch (sta) {
+      switch (sta) {                                                            // MIDIステータス上位4bitに対応するイベント種別で分岐する
       case 0xF0:                                                                // SysEx
         if (0xFF == ope.status) {                                               // メタイベント
           switch (ope.status1) {                                                // テキスト種類別処理
@@ -227,9 +263,28 @@ void Mml::Load(                                                                 
             break;
 
           case 6:                                                               // データエントリーMSB
-            if ((0 == rpn_lsb) &&(0 == rpn_msb)) {                              // RPN LSB MSBが共に０なら
+            if ((0 == rpn_lsb) &&(0 == rpn_msb)) {                              // RPN番号0（ピッチベンド範囲）が選択されている場合
               pitch_bend_sensitivity = ope.status2;                             // ピッチベンドセンシティヴィティを設定
+              if (inside_note) record_pitch(pitch_frame(ope));                  // 発音中なら変更後の範囲で、その時刻の目標音程を再計算する
             }
+            break;
+
+          case 38:                                                              // データエントリーLSB
+            if (rpn_lsb == 0 && rpn_msb == 0) {                                 // RPN番号0（ピッチベンド範囲）が選択されている場合
+              pitch_bend_cents = ope.status2;                                   // ベンド範囲のセント部分を更新する（100セント＝1半音）
+              if (inside_note) record_pitch(pitch_frame(ope));                  // 発音中ならセント部分の変更を直ちに反映する
+            }
+            break;
+
+          case 98:                                                              // NRPN LSBを選択するコントローラ
+          case 99:                                                              // NRPN MSBを選択するコントローラ
+            rpn_lsb = rpn_msb = 127;                                            // RPNのMSB・LSBを127にし、RPN未選択の状態にする
+            break;
+
+          case 121:                                                             // コントローラリセット
+            rpn_lsb = rpn_msb = 127;                                            // コントローラリセットでRPNを未選択にする
+            pitch_bend = 0;                                                     // 符号付きベンド値の中央0へ戻す（受信14bit値では8192）
+            if (inside_note) record_pitch(pitch_frame(ope));                    // 発音中なら中央へ戻す差分をこの時刻に記録する
             break;
           }
           break;
@@ -237,15 +292,7 @@ void Mml::Load(                                                                 
         case 0xE0:                                                              // ピッチベンド
           pitch_bend = ((static_cast<int>(ope.status2) << 7) | ope.status1) - 8192; // ピッチベンドを取り出す(範囲-8192～0～8191)
           if (inside_note) {                                                    // 音符内なら
-            /// ピッチエンベロープ内のフレーム位置
-            uint16_t frame = static_cast<uint16_t>(                             // 音符先頭からのフレーム　＝　整数化（
-                 3600. / tempo * (ope.time - note_on->time) / time_base_);      // 3600フレーム（１分間のフレーム数）／テンポ＊音符先頭からここまでの時間／分解能　）
-            pitch_envelope.resize(frame + 1);                                   // 音符先頭からのフレーム数だけピッチエンべロープの要素を確保
-            /// ピッチを反映した周波数レジスタ値
-            uint32_t pitch_frequency = PitchFrequencyCalc(                      // ピッチ周波数（レジスタ値）計算
-                note_on->status1, mml_ch, pitch_bend_sensitivity, pitch_bend);  // (i)音符のキー番号 (i)チャンネル (i)ピッチベンドセンシティヴィティ (i)ピッチベンド
-            SetPitchEnvelope(pitch_envelope, frame, prev_pitch_frequency - pitch_frequency); // フレーム位置に直前との差分を設定
-            prev_pitch_frequency = pitch_frequency;                             // 直前のピッチ周波数を更新
+            record_pitch(pitch_frame(ope));                                     // 丸め前のベンド時刻をフレームへ換算し、目標累積値を記録する
           }
           break;
 
@@ -256,16 +303,10 @@ void Mml::Load(                                                                 
             /// 音符または休符の長さを求める
             uint32_t note_len = get_note_length(ope.time, note_off);            // 音符または休符の長さ
             // ピッチエンヴェロープの処理
-            pitch_envelope.clear();                                             // ピッチエンヴェロープをクリア
-            prev_pitch_frequency = NoteFrequencyCalc(note_on->status1, mml_ch); // 音符の周波数（レジスタ値）を計算し直前の周波数とする
-            if (pitch_bend) {                                                   // ピッチベンドが０じゃなければ
-              /// ピッチを反映した周波数レジスタ値
-              uint32_t pitch_frequency =                                        ///< ピッチ周波数
-                  PitchFrequencyCalc(note_on->status1, mml_ch,                  // ピッチ周波数（レジスタ値）計算 (i)音符のキー番号 (i)チャンネル
-                      pitch_bend_sensitivity, pitch_bend);                      // (i)ピッチベンドセンシティヴィティ (i)ピッチベンド
-              SetPitchEnvelope(pitch_envelope, 0, prev_pitch_frequency - pitch_frequency); // ピッチエンベロープに周波数差を設定
-              prev_pitch_frequency = pitch_frequency;                           // 直前のピッチ周波数を更新
-            }
+            pitch_targets.clear();                                              // 前の音符の目標値を消去する
+            pitch_min_cents = pitch_max_cents = 0;                              // 基準音程0セントを含めて、この音符の変化幅を集計し直す
+            pitch_range_warned = false;
+            record_pitch(0);                                                    // 発音開始時のベンドも反映する
             // 休符の処理
             if (!note_len) {                                                    // 音符の長さが０なら
               continue;                                                         // 次の制御へ
@@ -300,8 +341,15 @@ void Mml::Load(                                                                 
               channel.note_vector.push_back(note);                              // 音符ベクタに音符情報を登録
             }
             // ピッチ
+            // 発音期間内で目標値を追跡し、未反映の差分を失わずに出力する。
+            const uint32_t frames = static_cast<uint32_t>(std::min(             ///< 発音期間を60Hzで表したフレーム数
+                std::ceil(3600.0 / tempo * note_len / time_base_),
+                4294967295.0));                                                 // 3600＝60Hz×60秒。端数フレームを切り上げ、uint32_t最大値に制限する
+            vector<char> pitch_envelope =
+                MakePitchEnvelope(pitch_targets, frames);                       ///< 目標累積値を1フレームごとの差分へ変換したEP
             /// 登録したピッチエンベロープのコマンド
-            string command = pitch_.Regist(pitch_envelope, mml_ch);             // ピッチエンヴェロープを登録し、EPコマンド文字列を受け取る
+            string command = pitch_.Regist(
+                pitch_envelope, pitch_max_cents - pitch_min_cents, mml_ch);     // MIDI側の変化幅をセント単位で判定し、EPコマンドを受け取る
             if ((!command.empty()) && (prev_e_pcommand != command)) {           // コマンドが空じゃなく、かつ 直前のEPコマンドと違うなら
               prev_e_pcommand = command;                                        // 直前のEPコマンドを更新
               NoteInfo note(command);                                           ///< EPコマンドの音符情報を作る
@@ -411,200 +459,137 @@ void Mml::Load(                                                                 
   }
 }
 
-/** @brief MIDIキーから音符の周波数レジスタ値を計算する */
-uint32_t Mml::NoteFrequencyCalc(                                                // MIDIキーから音符の周波数レジスタ値を計算する
+/** @brief ppmckの音階表から、出力音符の周波数レジスタ値を取得する */
+uint32_t Mml::NoteFrequencyCalc(                                                // 出力音符の周波数レジスタ値を取得する
     const uint8_t& key_no,                                                      ///< (i)MIDIキー番号
-    const uint8_t& ch,                                                          ///< (i)チャンネル
-    uint8_t base_key_no) const noexcept                                         ///< (i)基準MIDIキー番号(VRC7用)
+    const uint8_t& ch) const noexcept                                           ///< (i)MMLチャンネル
 {
-  double freq = 440 * pow(2, (key_no - 69) / 12.);                              ///< 音声周波素
-  int note_frequency;                                                           ///< 音符の周波数（レジスタ値）
-  switch (ch) {                                                                 // チャンネル分岐
-  case 'C':                                                                     // 2A03 三角波
-    freq /= 2;                                                                  // 音声周波数を半分に（1オクターブ低い）
-    // 周波数（レジスタ値）＝ 整数化（システムクロック／音符の周波数）を下位5ビットカット
-    note_frequency = static_cast<int>(kNesSystemClock / freq) >> 5;
-    break;
+  // ppmckの標準ドライバ音階表。12要素はC～Bの半音順で、各直値はレジスタ設定値。
+  constexpr array<uint32_t, 12> pulse = {                                       ///< 2A03・MMC5のo2のレジスタ表（12半音をC～Bの順に格納）
+      0x6AE, 0x64E, 0x5F4, 0x59E, 0x54E, 0x501,                                 // o2のC・C#・D・D#・E・Fのレジスタ値
+      0x4B9, 0x476, 0x436, 0x3F9, 0x3C0, 0x38A};                                // o2のF#・G・G#・A・A#・Bのレジスタ値
+  constexpr array<uint32_t, 12> vrc6 = {                                        ///< VRC6矩形波のo1の表。FME7では同じ表をo0の基準に使う
+      0xD5C, 0xC9D, 0xBE7, 0xB3C, 0xA9B, 0xA02,                                 // VRC6のo1（FME7のo0）のC～Fのレジスタ値
+      0x973, 0x8EB, 0x86B, 0x7F2, 0x780, 0x714};                                // VRC6のo1（FME7のo0）のF#～Bのレジスタ値
+  constexpr array<uint32_t, 12> saw = {                                         ///< VRC6鋸波のo1の周波数レジスタ表（C～B）
+      0xF45, 0xE6A, 0xD9B, 0xCD7, 0xC1F, 0xB71,                                 // o1のC～Fのレジスタ値
+      0xACC, 0xA31, 0x99F, 0x914, 0x892, 0x817};                                // o1のF#～Bのレジスタ値
+  constexpr array<uint32_t, 12> fds = {                                         ///< FDSのo6の周波数レジスタ表（C～B）
+      0x995, 0xA26, 0xAC0, 0xB64, 0xC11, 0xCC9,                                 // o6のC～Fのレジスタ値
+      0xD8C, 0xE5A, 0xF35, 0x101C, 0x1110, 0x1214};                             // o6のF#～Bのレジスタ値
+  constexpr array<uint32_t, 12> n106 = {                                        ///< N106ドライバのo8の表（8チャンネル・16サンプル、C～B）
+      0x23ECC, 0x260FA, 0x28530, 0x2AB8D, 0x2D433, 0x2FF43,                     // ドライバのo8のC～Fのレジスタ値
+      0x32CE2, 0x35D39, 0x3906E, 0x3C6B0, 0x40034, 0x43D1B};                    // ドライバのo8のF#～Bのレジスタ値
+  constexpr array<uint32_t, 12> vrc7 = {                                        ///< VRC7のF-number表（C～B、オクターブブロックと独立）
+      0xAC, 0xB6, 0xC1, 0xCD, 0xD9, 0xE6,                                       // C～FのF-number
+      0xF3, 0x102, 0x111, 0x121, 0x133, 0x145};                                 // F#～BのF-number
+  const auto note = key_no % 12;                                                ///< 12半音で割った余りを音名の添字0＝C～11＝Bにする
+  int octave = static_cast<int>(key_no / 12) - 1;                               ///< MIDIキーを12半音ごとに分け、MMLのオクターブ表記へ1を引く
+  if (ch == 'C' || ('P' <= ch && ch <= 'W')) {                                  // 三角波・16サンプルN106は実音が1オクターブ低いため補正する
+    ++octave;                                                                   // 出力音符と同じ1オクターブ上の補正をレジスタ計算へ反映する
+  }
+  octave = std::max(0, octave);                                                 // 出力音符と同じく、負のオクターブを最低のo0へ制限する
+  const auto shift = [](uint32_t value, int amount) {                           ///< 基準オクターブからのレジスタ倍率をビットシフトで求めるラムダ
+    return amount >= 0 ? value >> std::min(amount, 31)                          // 正数のシフト量では2^amountで除算。32bit値なので最大31bitに制限する
+                       : value << std::min(-amount, 15);                        // 負数のシフト量では2^(-amount)倍。左シフトは最大15bitに制限する
+  };
+  switch (ch) {                                                                 // 出力チャンネルに対応する音源のレジスタ表と倍率を選ぶ
+  case 'F':                                                                     // FDS 波形メモリ音源
+    return shift(fds[note], 6 - octave);                                        // FDSの基準o6からの差に応じ、1オクターブ上がるごとにレジスタを2倍にする
 
-  case 'O':                                                                     // VRC6 鋸波
-    // 周波数（レジスタ値）＝ 整数化（システムクロック／音符の周波数）／14
-    note_frequency = static_cast<int>(kNesSystemClock / freq) / 14;
-    break;
+  case 'G':                                                                     // VRC7 FM音源
+  case 'H':                                                                     // VRC7 FM音源
+  case 'I':                                                                     // VRC7 FM音源
+  case 'J':                                                                     // VRC7 FM音源
+  case 'K':                                                                     // VRC7 FM音源
+  case 'L':                                                                     // VRC7 FM音源
+    // VRC7のブロックは出力音符のオクターブに保持され、EPはF-numberだけを変える。
+    return vrc7[note];                                                          // オクターブブロックは固定し、この音名のF-numberだけを基準にする
 
-  case 'X':                                                                     // FME7
-  case 'Y':                                                                     // FME7
-  case 'Z':                                                                     // FME7
-    // 周波数（レジスタ値）＝ 整数化（システムクロック／２／音符の周波数）を下位4ビットカット
-    note_frequency = static_cast<int>(kNesSystemClock / 2 / freq) >> 4;
-    break;
-
-  case 'F':                                                                     // FDS
-    // 周波数（レジスタ値）＝ 整数化（音符の周波数／（システムクロック／65536／64））
-    note_frequency = static_cast<int>(freq / (kNesSystemClock / 65536 / 64));
-    break;
-
-  case 'P':                                                                     // N106
-  case 'Q':                                                                     // N106
-  case 'R':                                                                     // N106
-  case 'S':                                                                     // N106
-  case 'T':                                                                     // N106
-  case 'U':                                                                     // N106
-  case 'V':                                                                     // N106
-  case 'W':                                                                     // N106
-    freq /= 2;                                                                  // 音声周波数を半分に（16サンプルでは1オクターブ低い）
-    // 周波数（レジスタ値）＝ 整数化（音声周波数(Hz) × $40000 × 45 × 有効チャンネル数 × サンプル数 ÷ マスタークロック）
-    note_frequency = static_cast<int>(freq * (0x40000 * 45 * 8 * 16 / kNesMasterClock)) >> 7; // SA6用の設定
-    break;
-
-  case 'G':                                                                     // VRC7
-  case 'H':                                                                     // VRC7
-  case 'I':                                                                     // VRC7
-  case 'J':                                                                     // VRC7
-  case 'K':                                                                     // VRC7
-  case 'L':                                                                     // VRC7
-  // 周波数（レジスタ値）＝ 整数化（音声周波数(Hz) × 2＾(18－オクターブ) ÷ (システムクロック÷72)）
-  //    NoteFrequency = static_cast<int>( Freq * pow ( 2.,
-  //        (18 - 1 - static_cast<int>( BaseKeyNo / 12 ) ) ) / ((kNesSystemClock / 72) );
-  //    break;
-  // VRC7は暫定的に矩形波の計算式を使用する
-  case 'A':                                                                     // 2A03 矩形波
-  case 'B':                                                                     // 2A03 矩形波
-  case 'a':                                                                     // MMC5 矩形波
-  case 'b':                                                                     // MMC5 矩形波
   case 'M':                                                                     // VRC6 矩形波
   case 'N':                                                                     // VRC6 矩形波
-  default:                                                                      // その他の値
-    // 周波数（レジスタ値）＝ 整数化（システムクロック／音符の周波数）を下位4ビットカット
-    note_frequency = static_cast<int>(kNesSystemClock / freq) >> 4;
-    break;
+    return shift(vrc6[note], octave - 1);                                       // VRC6矩形波の基準o1から、1オクターブ上がるごとにタイマ値を半分にする
+
+  case 'O':                                                                     // VRC6 鋸波
+    return shift(saw[note], octave - 1);                                        // VRC6鋸波の基準o1から、1オクターブ上がるごとにタイマ値を半分にする
+
+  case 'P':                                                                     // N106 波形メモリ音源
+  case 'Q':                                                                     // N106 波形メモリ音源
+  case 'R':                                                                     // N106 波形メモリ音源
+  case 'S':                                                                     // N106 波形メモリ音源
+  case 'T':                                                                     // N106 波形メモリ音源
+  case 'U':                                                                     // N106 波形メモリ音源
+  case 'V':                                                                     // N106 波形メモリ音源
+  case 'W':                                                                     // N106 波形メモリ音源
+    // 現在の出力設定は8チャンネル・16サンプル。SA7は差分の生成時に適用する。
+    return shift(n106[note], 8 - octave);                                       // N106の基準o8から、1オクターブ上がるごとにレジスタ値を2倍にする
+
+  case 'X':                                                                     // FME7 矩形波
+  case 'Y':                                                                     // FME7 矩形波
+  case 'Z':                                                                     // FME7 矩形波
+    return shift(vrc6[note], octave);                                           // FME7では基準o0から、1オクターブ上がるごとにタイマ値を半分にする
+
+  default:                                                                      // 2A03矩形波・三角波、MMC5矩形波（A・B・C・a・b）
+    // 三角波の出力オクターブ補正、MMC5のドライバ側の補正を含む。
+    return shift(pulse[note], octave - 2);                                      // 基準o2からタイマ値を半分にする。三角波は補正後のオクターブを使う
   }
-  // ビット範囲チェック
-  if (0 > note_frequency) {
-    note_frequency = 0;
-/*  } else {
-    int  max;                                                                   // 最大値
-    switch ( Ch ) {                                                             // チャンネル
-    case 'P':                                                                   // N106
-    case 'Q':                                                                   // N106
-    case 'R':                                                                   // N106
-    case 'S':                                                                   // N106
-    case 'T':                                                                   // N106
-    case 'U':                                                                   // N106
-    case 'V':                                                                   // N106
-    case 'W':                                                                   // N106
-      max = 262143;                                                             // 18bit
-      break;
-
-    case 'G':                                                                   // VRC7
-    case 'H':                                                                   // VRC7
-    case 'I':                                                                   // VRC7
-    case 'J':                                                                   // VRC7
-    case 'K':                                                                   // VRC7
-    case 'L':                                                                   // VRC7
-      max = 511;                                                                // 9bit
-      break;
-
-    case 'F':                                                                   // FDS
-    case 'M':                                                                   // VRC6 矩形波
-    case 'N':                                                                   // VRC6 矩形波
-    case 'O':                                                                   // VRC6 鋸波
-    case 'X':                                                                   // FME7
-    case 'Y':                                                                   // FME7
-    case 'Z':                                                                   // FME7
-      max = 4095;                                                               // 12bit
-      break;
-
-    case 'A':                                                                   // 2A03 矩形波
-    case 'B':                                                                   // 2A03 矩形波
-    case 'C':                                                                   // 2A03 三角波
-    case 'a':                                                                   // MMC5 矩形波
-    case 'b':                                                                   // MMC5 矩形波
-    default :                                                                   // その他
-      max = 2047;                                                               // 11bit
-      break;
-    }
-    if ( max < NoteFrequency ) {                                                // 最大値を超えたら
-      NoteFrequency = max;                                                      // 範囲内に収める
-    }
-*/
-  }
-  return static_cast<int>(note_frequency);
 }
 
-/** @brief ピッチベンドを反映した周波数レジスタ値を計算する */
-uint32_t Mml::PitchFrequencyCalc(                                               // ピッチベンドを反映した周波数レジスタ値を計算する
+/** @brief MIDIベンドの半音変化量を、音源別のEP累積変化量へ変換する */
+int Mml::PitchOffsetCalc(                                                       // 音源別のEP累積変化量を計算する
     const uint8_t& key_no,                                                      ///< (i)MIDIキー番号
-    const uint8_t& ch,                                                          ///< (i)チャンネル
-    const uint8_t& pitch_bend_sensitivity,                                      ///< (i)ピッチベンドセンシティヴィティ
-    const short& pitch_bend) const noexcept                                     ///< (i)ピッチベンド(範囲-8192～0～8191)
+    const uint8_t& ch,                                                          ///< (i)MMLチャンネル
+    double pitch_bend_sensitivity,                                              ///< (i)ベンド範囲（半音＋セント）
+    const short& pitch_bend) const noexcept                                     ///< (i)ピッチベンド値
 {
-  uint8_t sensitive_key_no(key_no);                                             ///< センシティヴィティでのMIDIキー番号
-  if (0 > pitch_bend) {                                                         // 音符のキー番号＋ピッチベンドが負の数
-    sensitive_key_no -= pitch_bend_sensitivity;                                 // センシティヴィティでのMIDIキー番号－＝ピッチベンドセンシティヴィティ
-  } else {
-    sensitive_key_no += pitch_bend_sensitivity;                                 // センシティヴィティでのMIDIキー番号＋＝ピッチベンドセンシティヴィティ
-  }
-  uint32_t note_frequency = NoteFrequencyCalc(key_no, ch, sensitive_key_no);    // 音符の周波数（レジスタ値）計算
-  uint32_t sensitive_frequency = NoteFrequencyCalc(sensitive_key_no, ch, sensitive_key_no); // ピッチベンドセンシティヴィティの周波数（レジスタ値）計算
-  int pitch_bend_frequency;                                                     ///< ピッチベンドの周波数差分
-  if (0 > pitch_bend) {                                                         // ピッチベンドが負の数なら
-    pitch_bend_frequency = static_cast<int>(                                    // ピッチベンドの周波数差分＝整数化（
-        static_cast<int>(note_frequency - sensitive_frequency) * (pitch_bend / 8192.)); // （音符の周波数　－　ピッチベンドセンシティヴィティの周波数）×（ピッチベンド　／　8192(ピッチベンド最大値)））
-  } else {                                                                      // ピッチベンドが正の数なら
-    pitch_bend_frequency = static_cast<int>(                                    // ピッチベンドの周波数差分＝整数化（
-        -static_cast<int>(note_frequency - sensitive_frequency) * (pitch_bend / 8191.)); // －（音符の周波数　－　ピッチベンドセンシティヴィティの周波数）×（ピッチベンド　／　8191(ピッチベンド最大値)））
-  }
-  switch (ch) {
-  case 'F':                                                                     // FDS
-  //  case 'G':
-  //  case 'H':
-  //  case 'I':
-  //  case 'J':
-  //  case 'K':
-  //  case 'L':
-  case 'P':                                                                     // N106
-  case 'Q':                                                                     // N106
-  case 'R':                                                                     // N106
-  case 'S':                                                                     // N106
-  case 'T':                                                                     // N106
-  case 'U':                                                                     // N106
-  case 'V':                                                                     // N106
-  case 'W':                                                                     // N106
-    // 音声周波数とレジスタ値が比例する音源
-    pitch_bend_frequency = -pitch_bend_frequency;                               // プラマイ反転
-  }
-  return note_frequency + pitch_bend_frequency;                                 // ピッチ周波数（レジスタ値）＝音符の周波数＋ピッチベンドの周波数差分
+  const double fraction = pitch_bend / (pitch_bend < 0 ? 8192.0 : 8191.0);      ///< 14bitベンドの負側最大幅8192・正側最大幅8191で割った割合（-1～1）
+  const double ratio = pow(2.0, pitch_bend_sensitivity * fraction / 12.0);      ///< 12半音で周波数が2倍になるため、半音変化量から2^(変化量/12)を求める
+  const double base = NoteFrequencyCalc(key_no, ch);                            ///< ベンドなしの実際の周波数レジスタ値
+  const bool direct = ch == 'F' || ('G' <= ch && ch <= 'L') ||                  ///< FDS・VRC7・N106のようにレジスタと周波数が比例するか
+                      ('P' <= ch && ch <= 'W');                                 // 比例音源では周波数比をレジスタ値へそのまま掛ける
+  // タイマ音源は(R+1)に反比例し、FME7はRに反比例する。
+  const double bias = direct || ('X' <= ch && ch <= 'Z') ? 0.0 : 1.0;           ///< 比例音源・FME7はR、他タイマ音源はR+1を使うための補正値0または1
+  const double target = direct ? base * ratio : (base + bias) / ratio - bias;   ///< 比例音源は周波数比を掛け、反比例音源は補正済みタイマ値を周波数比で割る
+  const double offset = direct ? target - base : base - target;                 ///< #PITCH-CORRECTIONに合わせ、どの音源も正数が高音となる差分
+  return static_cast<int>(std::lround(
+      offset / (('P' <= ch && ch <= 'W') ? 128.0 : 1.0)));                      // N106のSA7は128単位で割り、他音源は1単位のまま、最も近いEP整数へ丸める
 }
 
-/** @brief ピッチエンベロープへ周波数差分を設定する */
-void Mml::SetPitchEnvelope(                                                     // ピッチエンベロープへ周波数差分を設定する
-    vector<char>& pitch_envelope,                                               ///< (io)ピッチエンべロープ
-    uint32_t frame,                                                             ///< (i)フレーム
-    int pitch_diff) const                                                       ///< (i)ピッチ周波数（レジスタ値）差分
+/** @brief 実際の累積値を追跡し、上限を超えた差分を次フレームで補う */
+vector<char> Mml::MakePitchEnvelope(                                            // 実際の累積値を追跡してEP差分を出力する
+    const map<uint32_t, int>& targets,                                          ///< (i)フレーム番号と目標累積値
+    uint32_t frames) const                                                      ///< (i)発音期間のフレーム数
 {
-  for ( ; (frame < 511) && (pitch_diff != 0); ++frame) {                        // フレームが511未満、かつ、ピッチ周波数差分が０以外である間ループ
-    if (frame >= pitch_envelope.size()) {                                       // フレームの要素が存在しないなら
-      pitch_envelope.resize(frame + 1);                                         // ピッチエンべロープの要素を追加
+  vector<char> envelope;                                                        ///< 出力するEPの1フレームごとのレジスタ差分
+  if (targets.empty()) {                                                        // ベンドの目標値が記録されていない場合
+    return envelope;                                                            // 作成済みのEP差分配列を返す
+  }
+  // ppmckの1024要素の定義表に、末尾の0・ループ・終端を含めて収める。
+  constexpr uint32_t max_frames = 1020;                                         ///< 1024要素のppmck表から管理用1要素・末尾0・ループ・終端を除いた上限
+  const uint32_t end = std::min(frames, max_frames);                            ///< 発音期間とEP定義の上限のうち短い方を出力終了位置にする
+  int desired = 0;                                                              ///< 現在の目標EP累積値。0はベンドなし
+  int applied = 0;                                                              ///< 実際にEPへ反映できた累積値。0はベンドなし
+  auto next = targets.begin();                                                  ///< 次に反映するベンドイベントのフレームと目標累積値
+  for (uint32_t frame = 0; frame < end; ++frame) {                              // 発音先頭から出力上限まで、60Hzの各フレームを処理する
+    if (next != targets.end() && next->first == frame) {                        // このフレームに新しいベンドの目標値がある場合
+      desired = next->second;                                                   // このフレーム以降で到達すべき累積値を更新する
+      ++next;                                                                   // 次のベンド目標イベントへ進める
     }
-    pitch_diff += pitch_envelope[frame];                                        // ピッチ周波数差分にピッチエンべロープ[フレーム]の値を足す
-    if (pitch_diff < 0) {                                                       // ピッチ周波数差分がマイナス値なら
-      if (pitch_diff < -127) {                                                  // ピッチ周波数差分が－１２８より小さければ
-        pitch_envelope[frame] = -127;                                           // ピッチエンヴェロープ[フレーム]に－１２８を設定し
-        pitch_diff += 127;                                                      // その分ピッチ周波数差分に１２８を足す
-      } else {                                                                  // ピッチ周波数差分が－１２８以上なら
-        pitch_envelope[frame] = pitch_diff;                                     // ピッチエンヴェロープ[フレーム]にピッチ周波数差分を設定し
-        pitch_diff = 0;                                                         // その分ピッチ周波数差分を０にする
-      }
-    } else {                                                                    // ピッチ周波数差分がプラス値なら
-      if (pitch_diff > 126) {                                                   // ピッチ周波数差分が１２７より大きければ
-        pitch_envelope[frame] = 126;                                            // ピッチエンヴェロープ[フレーム]に１２７を設定し
-        pitch_diff -= 126;                                                      // その分ピッチ周波数差分に１２７を引く
-      } else {                                                                  // ピッチ周波数差分が１２７以下なら
-        pitch_envelope[frame] = pitch_diff;                                     // ピッチエンヴェロープ[フレーム]にピッチ周波数差分を設定し
-        pitch_diff = 0;                                                         // その分ピッチ周波数差分を０にする
-      }
+    const int delta = std::clamp(desired - applied, -127, 126);                 ///< 未反映差分をEPの値域へ制限。正側127は終端記号と衝突するため126まで
+    envelope.push_back(static_cast<char>(delta));                               // このフレームに実際に加減する差分をEP配列へ追加する
+    applied += delta;                                                           // 実際に反映した差分だけ累積し、残りは後続フレームで補う
+  }
+  if (next != targets.end()) {                                                  // 出力できなかったベンド目標イベントが残っている場合
+    if (next->first < frames) {                                                 // 発音期間内だがEP定義の長さ上限を超えたイベントの場合
+      cerr << "ピッチエンベロープの長さ上限を超える変化を出力できません。\n";
+    } else {                                                                    // イベントが丸め後の音符の発音期間外にある場合
+      cerr << "ピッチ変化が丸め後の音符の発音期間を超えるため、出力できません。\n";
     }
   }
+  if (applied != desired) {                                                     // 1フレームの差分制限により、目標音程まで到達できなかった場合
+    cerr << "ピッチ変化が1フレームの値域を超え、発音期間内に目標音程へ到達できません。\n";
+  }
+  return envelope;                                                              // 作成済みのEP差分配列を返す
 }
 
 /** @brief 音符長の使用回数を集計する */
@@ -716,7 +701,12 @@ void Mml::Tone::Set(                                                            
     break;
 
   case 'G':                                                                     // VRC7
-    // Gチャンネルでのみユーザー音色を登録する
+  case 'H':                                                                     // VRC7
+  case 'I':                                                                     // VRC7
+  case 'J':                                                                     // VRC7
+  case 'K':                                                                     // VRC7
+  case 'L':                                                                     // VRC7
+    // 全VRC7チャンネルで使用するユーザー音色を重複なく登録する
     if (color_cmd_ghijkl_.find(prg_no) == color_cmd_ghijkl_.end()) {            // 音色が登録されていなければ
       if (!tone_def_vct_vrc7_[prg_no].empty()) {                                // 音色定義VRC7が登録されていたら
         ostringstream cmd;                                                      ///< コマンド作成
@@ -730,14 +720,6 @@ void Mml::Tone::Set(                                                            
         ++serial_no_ghijkl_;                                                    // 管理番号カウントアップ
       }
     }
-    break;
-
-  case 'H':                                                                     // VRC7
-  case 'I':                                                                     // VRC7
-  case 'J':                                                                     // VRC7
-  case 'K':                                                                     // VRC7
-  case 'L':                                                                     // VRC7
-    // Gチャンネル以外ではユーザー音色を登録しない
     break;
 
   case 'P':                                                                     // N106
@@ -1459,6 +1441,7 @@ uint16_t Mml::Tone::ParMapChg(                                                  
 /** @brief ピッチエンベロープ定義を登録し、EPコマンド文字列を返す */
 string Mml::Pitch::Regist(                                                      // ピッチエンベロープ定義を登録し、EPコマンド文字列を返す
     vector<char>& envelope,                                                     ///< (io)エンヴェロープ
+    double midi_span_cents,                                                     ///< (i)RPN範囲を反映したMIDI音程偏差の最大値－最小値（セント）
     uint8_t ch)                                                                 ///< (i)チャンネル
 {
   // 末尾の０の連続を削除
@@ -1474,18 +1457,14 @@ string Mml::Pitch::Regist(                                                      
   if (envelope.empty()) {                                                       // エンヴェロープが空なら
     return "EPOF";                                                              // EPOFコマンド文字列を返す
   }
-  // 定義文字列作成、及び、変化量最大最小の検索
-  int frequency(0), max(0), min(0);                                             ///< 周波数変化量の累積値・最大値・最小値
+  // 音源やノート番号によらず、MIDI側の音程変化幅で登録を判定する。
+  if (midi_span_cents < register_threshold_) {                                  // 変化幅が指定した最低セント数未満なら登録しない
+    return "EPOF";                                                              // 閾値未満の音符ではEPを無効にする
+  }
+  // 定義文字列作成
   ostringstream oss;                                                            ///< 文字列編集用
   for (const auto& val : envelope) {                                            // エンヴェロープループ
     oss << static_cast<int>(val) << ",";                                        // エンヴェロープを編集
-    frequency += val;                                                           // 現在の相対周波数
-    if (max < frequency) max = frequency;                                       // 最大値更新
-    if (min > frequency) min = frequency;                                       // 最小値更新
-  }
-  // ピッチエンヴェロープ変化量チェック
-  if (register_threshold_ > (max - min)) {                                      // 変化量が、ピッチエンヴェロープ登録閾値（変化量下限）未満なら
-    return "EPOF";                                                              // EPOFコマンド文字列を返す
   }
   // 同じ登録内容を検索
   string def_str = oss.str();                                                   ///< 定義文字列を取り出し
@@ -1643,11 +1622,9 @@ int Mml::Save(                                                                  
     // 音色
     if (('G' <= ch_str[0]) && ('L' >= ch_str[0])) {                             // VRC7の場合
       string cmd = tone_.Get(ch_str[0], ch_entry.second.first_prg_no);          ///< 音色コマンド
-      if (!cmd.empty()) {                                                       // ユーザー音色が登録されていたら
+      if (tone_.color_cmd_ghijkl_.count(ch_entry.second.first_prg_no) != 0) {   // ユーザー音色が登録されていたら
         ofs << "\t@@0";                                                         // ユーザー音色を出力
-        // if ( 'G' == ChStr[0] ) {                                             // Gチャンネルなら
-        ofs << cmd;                                                             // 更にOPコマンドを出力
-        // }
+        ofs << cmd;                                                             // G～Lの先頭でOPコマンドとLFOコマンドを出力
       } else {                                                                  // ユーザー音色が登録されてなければ
         ofs << "\t@@" << kToneDefVrc7Preset[ch_entry.second.first_prg_no];      // プリセット音色を出力
       }
@@ -1818,11 +1795,9 @@ int Mml::Save(                                                                  
           prg_no = note.oct;                                                    // プログラム番号を更新
           if (('G' <= ch_str[0]) && ('L' >= ch_str[0])) {                       // VRC7の場合
             string cmd = tone_.Get(ch_str[0], prg_no);                          ///< ユーザー音色取得
-            if (!cmd.empty()) {                                                 // ユーザー音色が登録されていたら
+            if (tone_.color_cmd_ghijkl_.count(prg_no) != 0) {                   // ユーザー音色が登録されていたら
               ofs << "@@0";                                                     // ユーザー音色を出力
-              if ('G' == ch_str[0]) {                                           // Gチャンネルなら
-                ofs << cmd;                                                     // 更にOPコマンドを出力
-              }
+              ofs << cmd;                                                       // G～Lの音色変更でOPコマンドとLFOコマンドを出力
             } else {                                                            // ユーザー音色が登録されてなければ
               ofs << "@@" << kToneDefVrc7Preset[prg_no];                        // プリセット音色を出力
             }
@@ -1867,11 +1842,9 @@ int Mml::Save(                                                                  
       prg_no = loop_prg_no;                                                     // プログラム番号をループ時点のプログラム番号に更新
       if (('G' <= ch_str[0]) && ('L' >= ch_str[0])) {                           // VRC7の場合
         string cmd = tone_.Get(ch_str[0], prg_no);                              ///< ユーザー音色取得
-        if (!cmd.empty()) {                                                     // ユーザー音色が登録されていたら
+        if (tone_.color_cmd_ghijkl_.count(prg_no) != 0) {                       // ユーザー音色が登録されていたら
           ofs << "@@0";                                                         // ユーザー音色を出力
-          if ('G' == ch_str[0]) {                                               // Gチャンネルなら
-            ofs << cmd;                                                         // 更にOPコマンドを出力
-          }
+          ofs << cmd;                                                           // G～Lのループ復帰でOPコマンドとLFOコマンドを出力
         } else {                                                                // ユーザー音色が登録されてなければ
           ofs << "@@" << kToneDefVrc7Preset[prg_no];                            // プリセット音色を出力
         }

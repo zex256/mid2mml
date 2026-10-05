@@ -298,23 +298,25 @@ class Mml {
   class Pitch {
    public:
     uint16_t register_max_;                                                     ///< 最大登録数
-    uint16_t register_threshold_;                                               ///< 登録閾値（ピッチエンヴェロープ変化量下限）
+    uint16_t register_threshold_;                                               ///< 登録閾値（MIDI音程偏差の変化幅下限、セント）
     vector<string> envelope_def_;                                               ///< 定義
 
     /** @brief ピッチエンベロープ管理情報を初期化する */
     Pitch()                                                                     // ピッチエンベロープ管理情報を初期化する
         : register_max_(128),
-          register_threshold_(1),
+          register_threshold_(5),
           envelope_def_() {}
 
     /**
      * @brief ピッチエンベロープ定義を登録し、EPコマンド文字列を返す
      * @param envelope (io)登録対象のピッチエンベロープ
+     * @param midi_span_cents (i)RPN範囲を反映したMIDI音程偏差の変化幅（セント）
      * @param ch (i)対象チャンネル
      * @return EPコマンド文字列
      */
     string Regist(                                                              // ピッチエンベロープ定義を登録し、EPコマンド文字列を返す
         vector<char>& envelope,                                                 ///< (io)ピッチエンヴェロープ
+        double midi_span_cents,                                                 ///< (i)MIDI側の音程偏差の最大値－最小値（セント）
         uint8_t ch = '?');                                                      ///< (i)チャンネル
 
     /**
@@ -468,11 +470,11 @@ class Mml {
   /**
    * @brief ピッチエンベロープの登録条件を設定する
    * @param regist_max (i)登録する定義の最大数
-   * @param regist_threshold (i)登録する変化量の閾値
+   * @param regist_threshold (i)登録するMIDI音程変化幅の閾値（セント）
    */
   void SetPitchEnvelopeOptions(                                                 // ピッチエンベロープの登録条件を設定する
       uint16_t regist_max,                                                      ///< (i)登録する定義の最大数
-      uint16_t regist_threshold) noexcept {                                     ///< (i)登録する変化量の閾値
+      uint16_t regist_threshold) noexcept {                                     ///< (i)登録するMIDI音程変化幅の閾値（セント）
     pitch_.register_max_ = regist_max;
     pitch_.register_threshold_ = regist_threshold;
   }
@@ -495,38 +497,35 @@ class Mml {
    * @brief MIDIキーから音符の周波数レジスタ値を計算する
    * @param key_no (i)MIDIキー番号
    * @param ch (i)MMLチャンネル
-   * @param base_key_no (i)基準MIDIキー番号
-   * @return 周波数レジスタ値
+   * @return ppmck音階表と出力オクターブに対応する周波数レジスタ値
    */
   uint32_t NoteFrequencyCalc(                                                   // MIDIキーから音符の周波数レジスタ値を計算する
       const uint8_t& key_no,                                                    ///< (i)MIDIキー番号
-      const uint8_t& ch,                                                        ///< (i)チャンネル
-      uint8_t base_key_no = 1) const noexcept;                                  ///< (i)基準MIDIキー番号(VRC7用)
+      const uint8_t& ch) const noexcept;                                        ///< (i)チャンネル
 
   /**
-   * @brief ピッチベンドを反映した周波数レジスタ値を計算する
+   * @brief 半音単位のベンドからEPの累積変化量を計算する
    * @param key_no (i)MIDIキー番号
    * @param ch (i)MMLチャンネル
    * @param pitch_bend_sensitivity (i)ピッチベンド感度
    * @param pitch_bend (i)ピッチベンド値
-   * @return 周波数レジスタ値
+   * @return 正数で高音となるEPの累積変化量（N106はSA7単位）
    */
-  uint32_t PitchFrequencyCalc(                                                  // ピッチベンドを反映した周波数レジスタ値を計算する
+  int PitchOffsetCalc(                                                          // 半音単位のベンドからEPの累積変化量を計算する
       const uint8_t& key_no,                                                    ///< (i)MIDIキー番号
       const uint8_t& ch,                                                        ///< (i)チャンネル
-      const uint8_t& pitch_bend_sensitivity,                                    ///< (i)ピッチベンドセンシティヴィティ
+      double pitch_bend_sensitivity,                                            ///< (i)ピッチベンド範囲（半音＋セント）
       const short& pitch_bend) const noexcept;                                  ///< (i)ピッチベンド(範囲-8192～0～8191)
 
   /**
-   * @brief ピッチエンベロープへ周波数差分を設定する
-   * @param pitch_envelope (io)更新対象のピッチエンベロープ
-   * @param frame (i)更新を開始するフレーム
-   * @param pitch_diff (i)設定する周波数差分
+   * @brief フレームごとの目標累積値から、実際に反映できた差分をEPへ出力する
+   * @param targets (i)フレーム番号と目標累積値
+   * @param frames (i)発音期間のフレーム数
+   * @return ppmckの1フレームの値域に収めたEP
    */
-  void SetPitchEnvelope(                                                        // ピッチエンベロープへ周波数差分を設定する
-      vector<char>& pitch_envelope,                                             ///< (io)ピッチエンべロープ
-      uint32_t frame,                                                           ///< (i)フレーム
-      int pitch_diff) const;                                                    ///< (i)ピッチ周波数（レジスタ値）差分
+  vector<char> MakePitchEnvelope(                                               // 目標累積値からEPのフレーム差分を作成する
+      const map<uint32_t, int>& targets,                                        ///< (i)フレーム番号と目標累積値
+      uint32_t frames) const;                                                   ///< (i)発音期間のフレーム数
   //--------------------------------------------------------------
   /**
    * @brief 音符長の使用回数を集計する

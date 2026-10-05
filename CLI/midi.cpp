@@ -536,7 +536,8 @@ void Midi::ChangeResolution(                                                    
     // 制御リストループ
     for (auto& ope : track) {                                                   // 制御リストループ
       // 時間を伸縮
-      ope.time = static_cast<uint32_t>(ope.time * ratio + .5);                  // 伸縮 ＋ 補正
+      ope.precise_time = ope.time * ratio;                                      // ベンド用に丸め前の絶対tickを保存する
+      ope.time = static_cast<uint32_t>(ope.precise_time + .5);                  // 0.5tickを加えて整数化し、音符の時刻を最も近いtickへ丸める
     }
   }
   time_base_ = new_time_base;                                                   // 新しい分解能に更新
