@@ -14,6 +14,7 @@ $volumeEnvelopeScript = Join-Path $PSScriptRoot 'Invoke-VolumeEnvelopeTests.ps1'
 $pitchEnvelopeScript = Join-Path $PSScriptRoot 'Invoke-PitchEnvelopeTests.ps1'
 $vrc7ToneScript = Join-Path $PSScriptRoot 'Invoke-Vrc7ToneTests.ps1'
 $fdsToneScript = Join-Path $PSScriptRoot 'Invoke-FdsToneTests.ps1'
+$definitionCommentScript = Join-Path $PSScriptRoot 'Invoke-DefinitionCommentTests.ps1'
 
 # 既定値と-c/-r明示指定が同じ結果になることを確認する。
 & $regressionScript -Executable $resolvedExecutable -SkipGoldenComparison
@@ -123,5 +124,6 @@ if ($output -notmatch [regex]::Escape('MIDIファイルを複数指定できま�
 & $pitchEnvelopeScript -Executable $resolvedExecutable
 & $vrc7ToneScript -Executable $resolvedExecutable
 & $fdsToneScript -Executable $resolvedExecutable
+& $definitionCommentScript -Executable $resolvedExecutable
 
 Write-Host 'All converter option tests passed.'

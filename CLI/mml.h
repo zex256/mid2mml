@@ -1,6 +1,7 @@
 #pragma once
 #include <charconv>
 #include <cstdint>
+#include <iomanip>
 #include <iosfwd>
 #include <map>
 #include <optional>
@@ -279,17 +280,30 @@ class Mml {
     uint16_t ParMapChg(                                                         // 未登録のパーカッション音色を補完する
         const uint16_t& prg_no) const noexcept;                                 ///< (i)プログラム番号
 
-    /** @brief 音色情報のコメント文字列を作成する */
-    string CommentEdit(                                                         // 音色情報のコメント文字列を作成する
+    /** @brief 定義の最終行をタブ幅4で0始まり80桁まで進め、コメントを追加する */
+    void CommentEdit(                                                           // 定義ストリームへ桁揃えしたコメントを追加する
+        ostringstream& def,                                                     ///< (io)コメント追加前の定義ストリーム
         const uint8_t& ch,                                                      ///< (i)チャンネル
-        const uint8_t& prg_no) const                                            ///< (i)プログラム番号
+        const uint16_t& prg_no,                                                 ///< (i)プログラム番号または打楽器番号
+        optional<uint16_t> volume = std::nullopt) const                         ///< (i)音量定義の場合の音量値
     {
-      char ch_str[2] = " ";                                                     ///< チャンネル文字列
-      ch_str[0] = ch;
-      ostringstream oss;                                                        ///< コメント編集用ストリーム
-      oss << "// Ch." << ch_str << "\t\t\tPrgNo." << static_cast<uint16_t>(prg_no + 1)
-          << "\t" << kToneName[prg_no] << '\n';
-      return oss.str();                                                         // コメントを出力
+      const string text = def.str();                                            ///< コメント追加前の定義文字列
+      const size_t newline = text.find_last_of('\n');                           ///< 最後の改行位置
+      const size_t start = newline == string::npos ? 0 : newline + 1;           ///< 最終行の開始位置
+      size_t column = 0;                                                        ///< 最終行の0始まり表示桁数
+      for (size_t i = start; i < text.size(); ++i) {                            // 数値・記号・固定ASCIIパスの定義部分を数える
+        column += text[i] == '\t' ? 4 - column % 4 : 1;                         // タブは次の4桁境界まで進める
+      }
+      const size_t tabs = column >= 80 ? 1 : (80 - column + 3) / 4;             ///< 80桁までのタブ数、長い定義には1個
+      def << string(tabs, '\t') << "// Ch." << static_cast<char>(ch);           // タブだけで字下げしてコメントを開始する
+      if (volume.has_value()) {                                                 // 音量定義では音量と従来のプログラム番号を記載する
+        def << " Vol." << std::left << std::setfill(' ') << std::setw(2) << *volume
+            << "\tPrgNo." << std::setw(3) << prg_no;
+      } else {                                                                  // 音色定義では打楽器番号または1始まりの音色番号を記載する
+        def << "\t\t\tPrgNo." << std::left << std::setfill(' ') << std::setw(3)
+            << (ch == 'D' || ch == 'E' ? prg_no : prg_no + 1);
+      }
+      def << '\t' << (ch == 'D' || ch == 'E' ? kDrumName[prg_no] : kToneName[prg_no]) << '\n'; // 音色名または打楽器名と改行を追加する
     }
   } tone_;                                                                      ///< 音質管理クラス実体
   //--------------------------------------------------------------

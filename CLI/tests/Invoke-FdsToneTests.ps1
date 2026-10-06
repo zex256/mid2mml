@@ -29,8 +29,8 @@ foreach ($fixture in @(
     $expected = '@FM' + $fixture.Serial + "`t={" + $wave.Substring(0, 48) + "`n" +
         "`t`t  " + $wave.Substring(48, 48) + "`n" +
         "`t`t  " + $wave.Substring(96, 48) + "`n" +
-        "`t`t  " + $wave.Substring(144) + "}`t// Ch.F`t`t`tPrgNo." +
-        $fixture.Program + "`t" + $fixture.Name + "`n"
+        "`t`t  " + $wave.Substring(144) + "}`t`t`t`t`t`t// Ch.F`t`t`tPrgNo." +
+        $fixture.Program.ToString().PadRight(3) + "`t" + $fixture.Name + "`n"
     if (-not ($mml -replace "`r", '').Contains($expected)) {
         throw "FDS waveform values, line breaks, indentation or comment are incorrect: $($fixture.Name)"
     }

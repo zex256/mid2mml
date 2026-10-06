@@ -630,8 +630,8 @@ void Mml::Tone::Set(                                                            
       color_cmd_abab_mn_[prg_no] = cmd.str();                                   // コマンド追加
       ostringstream def;                                                        ///< 定義作成
       def << "@" << serial_no_abab_mn_ << "  \t={"
-          << (tone_def_vct_square_[prg_no].empty() ? "1" : tone_def_vct_square_[prg_no])
-          << "}\t\t\t\t\t\t\t\t\t\t" << CommentEdit(ch, prg_no);
+          << (tone_def_vct_square_[prg_no].empty() ? "1" : tone_def_vct_square_[prg_no]) << "}";
+      CommentEdit(def, ch, prg_no);                                             // 桁揃えしたコメントを追加
       color_def_abab_mn_[serial_no_abab_mn_] = def.str();                       // 定義追加
       ++serial_no_abab_mn_;                                                     // 管理番号カウントアップ
     }
@@ -648,8 +648,8 @@ void Mml::Tone::Set(                                                            
       color_cmd_abab_mn_[shift_no] = cmd.str();                                 // コマンド追加
       ostringstream def;                                                        ///< 定義作成
       def << "@" << serial_no_abab_mn_ << "  \t={"
-          << (tone_def_vct_vrc6_[prg_no].empty() ? "3" : tone_def_vct_vrc6_[prg_no])
-          << "}\t\t\t\t\t\t\t\t\t\t" << CommentEdit(ch, prg_no);
+          << (tone_def_vct_vrc6_[prg_no].empty() ? "3" : tone_def_vct_vrc6_[prg_no]) << "}";
+      CommentEdit(def, ch, prg_no);                                             // 桁揃えしたコメントを追加
       color_def_abab_mn_[serial_no_abab_mn_] = def.str();                       // 定義追加
       ++serial_no_abab_mn_;                                                     // 管理番号カウントアップ
     }
@@ -677,8 +677,8 @@ void Mml::Tone::Set(                                                            
       note_cmd_e_[shift_no] = note.str();                                       // 音符コマンド追加
       ostringstream def;                                                        ///< 定義作成
       def << "@DPCM" << serial_no_e_ << "\t={\"dmc\\" << static_cast<uint16_t>(shift_no)
-          << ".dmc\"\t,15}\t\t\t\t\t\t// Ch.E\t\t\tPrgNo." << static_cast<uint16_t>(shift_no)
-          << "\t" << kDrumName[static_cast<uint16_t>(shift_no)] << "\n";
+          << ".dmc\"\t,15}";
+      CommentEdit(def, ch, shift_no);                                           // 打楽器番号と音色名のコメントを追加
       color_def_e_[serial_no_e_] = def.str();                                   // 定義追加
       ++serial_no_e_;                                                           // 管理番号カウントアップ
     }
@@ -699,7 +699,8 @@ void Mml::Tone::Set(                                                            
       def << "@FM" << serial_no_f_ << "\t={" << val.substr(0, 48) << "\n"
           << "\t\t  " << val.substr(48, 48) << "\n"
           << "\t\t  " << val.substr(96, 48) << "\n"
-          << "\t\t  " << val.substr(144) << "}\t" << CommentEdit(ch, prg_no);
+          << "\t\t  " << val.substr(144) << "}";
+      CommentEdit(def, ch, prg_no);                                             // 波形最終行へ桁揃えしたコメントを追加
       color_def_f_[serial_no_f_] = def.str();                                   // 定義追加
       ++serial_no_f_;                                                           // 管理番号カウントアップ
     }
@@ -720,7 +721,8 @@ void Mml::Tone::Set(                                                            
         ostringstream def;                                                      ///< 定義作成
         def << "@OP" << serial_no_ghijkl_                                       // 管理番号を設定
             << "\t={" << tone_def_vct_vrc7_[prg_no]                             // 音色定義VRC7を設定
-            << "}\t\t\t" << CommentEdit(ch, prg_no);                            // コメントを設定
+            << "}";
+        CommentEdit(def, ch, prg_no);                                           // 桁揃えしたコメントを追加
         color_def_ghijkl_[serial_no_ghijkl_] = def.str();                       // 定義追加
         ++serial_no_ghijkl_;                                                    // 管理番号カウントアップ
       }
@@ -744,12 +746,12 @@ void Mml::Tone::Set(                                                            
       ostringstream def;                                                        ///< 定義作成
       if (!tone_def_vct_n106_[prg_no].empty()) {                                // 定義が有るなら
         def << "@N" << serial_no_pqrstuvw_ << " \t={" << ch - 'P' << ","
-            << tone_def_vct_n106_[prg_no] << "}\t" << CommentEdit(ch, prg_no);
+            << tone_def_vct_n106_[prg_no] << "}";
       } else {                                                                  // 定義が無いなら
         def << "@N" << serial_no_pqrstuvw_ << " \t={" << ch - 'P'
-            << ",15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0}\t"
-            << CommentEdit(ch, prg_no);
+            << ",15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0}";
       }
+      CommentEdit(def, ch, prg_no);                                             // 桁揃えしたコメントを追加
       color_def_pqrstuvw_[serial_no_pqrstuvw_] = def.str();                     // 定義追加
       ++serial_no_pqrstuvw_;                                                    // 管理番号カウントアップ
     }
@@ -810,8 +812,8 @@ void Mml::Tone::Set(                                                            
       cmd << "MP" << serial_no_lfo_;
       lfo_cmd_[prg_no] = cmd.str();                                             // コマンド追加
       ostringstream def;                                                        ///< 定義作成
-      def << "@MP" << serial_no_lfo_ << "\t={29,2,1,0}\t\t\t\t\t\t\t\t\t"
-          << CommentEdit(ch, prg_no);
+      def << "@MP" << serial_no_lfo_ << "\t={29,2,1,0}";
+      CommentEdit(def, ch, prg_no);                                             // 桁揃えしたコメントを追加
       lfo_def_[serial_no_lfo_] = def.str();                                     // 定義追加
       ++serial_no_lfo_;                                                         // 管理番号カウントアップ
     }
@@ -1920,7 +1922,7 @@ void Mml::Tone::PutToneDef(                                                     
     const map<uint16_t, string>& def_map) const                                 ///< (i)音質定義マップ
 {
   for (const auto& [Key, ToneDef] : def_map) {                                  // 定義マップループ
-    os << ToneDef;                                                              // 定義を出力
+    os << ToneDef;                                                              // 組み立て済みの定義を出力
   }
   os.flush();
 }
@@ -1933,15 +1935,11 @@ void Mml::Tone::PutVolumeDef(                                                   
   for (const auto& [Definition, VolMap] : def_map) {                            // 音量定義マップループ
     for (const auto& [Volume, VolInfo] : VolMap) {                              // 音量マップループ
       uint16_t prg_no = (0x7F & Definition);                                    ///< プログラム番号を取り出す
-      os << "@v" << VolInfo.serial_no                                           // 定義を出力
-         << " \t={" << VolInfo.define << "}\t\t\t\t\t// Ch." << VolInfo.ch
-         << " Vol." << Volume << "\tPrgNo." << prg_no;
-      if (('D' == VolInfo.ch) || ('E' == VolInfo.ch)) {
-        os << "\t" << kDrumName[prg_no];
-      } else {
-        os << "\t" << kToneName[prg_no];
-      }
-      os << '\n';
+      ostringstream def;                                                        ///< 音量定義とコメントを組み立てるストリーム
+      def << "@v" << VolInfo.serial_no                                          // 定義を編集
+          << " \t={" << VolInfo.define << "}";
+      CommentEdit(def, VolInfo.ch, prg_no, Volume);                             // 桁揃えして音量・音色のコメントを追加
+      os << def.str();                                                          // 組み立て済みの音量定義を出力
     }
   }
 }
