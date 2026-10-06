@@ -11,6 +11,7 @@
 using std::cerr, std::getenv, std::istringstream, std::ios;
 using std::map, std::ofstream, std::ostream, std::ostringstream;
 using std::pow, std::size_t, std::string;
+using std::string_literals::operator""s;
 using std::uint16_t, std::uint32_t, std::uint8_t, std::vector;
 
 /**
@@ -688,13 +689,17 @@ void Mml::Tone::Set(                                                            
       ostringstream cmd;                                                        ///< コマンド作成
       cmd << "@@" << serial_no_f_;
       color_cmd_f_[prg_no] = cmd.str();                                         // コマンド追加
+      const string& val = tone_def_vct_fds_[prg_no].empty() ?                   // FDS音色定義がなければ固定波形を使用する
+          "63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,"
+          "63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,"
+          " 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,"
+          " 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0"s :
+          tone_def_vct_fds_[prg_no];                                            // FDS音色定義があれば使用する
       ostringstream def;                                                        ///< 定義作成
-      def << "@FM" << serial_no_f_ << "\t={\t\t\t\t\t\t\t"
-          << CommentEdit(ch, prg_no)
-          << "      63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,\n"
-          << "      63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,\n"
-          << "      00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,\n"
-          << "      00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00}\n";
+      def << "@FM" << serial_no_f_ << "\t={" << val.substr(0, 48) << "\n"
+          << "\t\t  " << val.substr(48, 48) << "\n"
+          << "\t\t  " << val.substr(96, 48) << "\n"
+          << "\t\t  " << val.substr(144) << "}\t" << CommentEdit(ch, prg_no);
       color_def_f_[serial_no_f_] = def.str();                                   // 定義追加
       ++serial_no_f_;                                                           // 管理番号カウントアップ
     }
