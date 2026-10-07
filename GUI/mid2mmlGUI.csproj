@@ -7,6 +7,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>mid2mmlGUI</RootNamespace>
     <AssemblyName>mid2mmlGUI</AssemblyName>
+    <ApplicationIcon>..\Assets\mid2mml.ico</ApplicationIcon>
     <Mid2mmlCliSource Condition="'$(Mid2mmlCliSource)' == ''">$(MSBuildThisFileDirectory)..\CLI\$(Configuration)\mid2mml.exe</Mid2mmlCliSource>
   </PropertyGroup>
 

@@ -53,5 +53,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="ReadMe.txt" />
+    <None Include="..\Assets\mid2mml.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="mid2mml.rc" />
   </ItemGroup>
 </Project>

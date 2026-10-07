@@ -7,6 +7,7 @@ namespace mid2mmlGUI
   {
         private void InitializeComponent()
         {
+            var resources = new System.ComponentModel.ComponentResourceManager(typeof(MainForm));
             root = new TableLayoutPanel();
             heading = new Label();
             _inputGroup = new GroupBox();
@@ -672,6 +673,7 @@ namespace mid2mmlGUI
             Name = "MainForm";
             StartPosition = FormStartPosition.CenterScreen;
             Text = "mid2mmlGUI";
+            Icon = (Icon)resources.GetObject("$this.Icon");
             root.ResumeLayout(false);
             _inputGroup.ResumeLayout(false);
             inputGrid.ResumeLayout(false);
