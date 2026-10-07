@@ -83,6 +83,36 @@ bool IsValidShiftJis(                                                           
 }
 
 #ifdef _WIN32                                                                   // Windows
+/** @brief Shift-JIS文字列をUTF-8文字列へ変換する */
+optional<string> ShiftJisToUtf8(                                                // Shift-JIS文字列をUTF-8文字列へ変換する
+    string_view text) {                                                         ///< (i)Shift-JIS文字列
+  if (text.empty()) {                                                           // 空文字列なら
+    return string{};
+  }
+  const int text_size = static_cast<int>(text.size());                          ///< UTF-8変換前のバイト数
+  const int wide_size = MultiByteToWideChar(932, MB_ERR_INVALID_CHARS,          ///< CP932からUTF-16の文字数を取得
+      text.data(), text_size, nullptr, 0);
+  if (wide_size <= 0) {                                                         // UTF-16へ変換できなければ
+    return nullopt;
+  }
+  wstring wide_text(static_cast<size_t>(wide_size), L'\0');                     ///< UTF-16文字列
+  if (MultiByteToWideChar(932, MB_ERR_INVALID_CHARS, text.data(), text_size,
+      wide_text.data(), wide_size) <= 0) {                                      // UTF-16への変換に失敗したら
+    return nullopt;
+  }
+  const int utf8_size = WideCharToMultiByte(CP_UTF8, 0,                         ///< UTF-8変換後のバイト数を取得
+      wide_text.data(), wide_size, nullptr, 0, nullptr, nullptr);
+  if (utf8_size <= 0) {                                                         // UTF-8へ変換できなければ
+    return nullopt;
+  }
+  string result(static_cast<size_t>(utf8_size), '\0');                          ///< UTF-8変換結果
+  if (WideCharToMultiByte(CP_UTF8, 0, wide_text.data(), wide_size,
+      result.data(), utf8_size, nullptr, nullptr) <= 0) {                       // UTF-8への変換に失敗したら
+    return nullopt;
+  }
+  return result;
+}
+
 /** @brief UTF-8文字列をShift-JIS文字列へ変換する */
 optional<string> Utf8ToShiftJis(                                                // UTF-8文字列をShift-JIS文字列へ変換する
     string_view text) {                                                         ///< (i)UTF-8文字列
@@ -114,6 +144,31 @@ optional<string> Utf8ToShiftJis(                                                
   return result;
 }
 #else                                                                           // Linux・MacOS
+/** @brief Shift-JIS文字列をUTF-8文字列へ変換する */
+optional<string> ShiftJisToUtf8(                                                // Shift-JIS文字列をUTF-8文字列へ変換する
+    string_view text) {                                                         ///< (i)Shift-JIS文字列
+  iconv_t converter = iconv_open("UTF-8", "CP932");                             ///< 文字コード変換器
+  if (converter == reinterpret_cast<iconv_t>(-1)) {                             // CP932変換器を作成できなければ
+    converter = iconv_open("UTF-8", "SHIFT-JIS");
+  }
+  if (converter == reinterpret_cast<iconv_t>(-1)) {                             // 変換器を作成できなければ
+    return nullopt;
+  }
+  string result(text.size() * 4 + 1, '\0');                                     ///< 1入力バイトあたり最大4バイトのUTF-8出力領域
+  char* input = const_cast<char*>(text.data());                                 ///< iconvへ渡す未変換部分の先頭
+  size_t input_size = text.size();                                              ///< 未変換部分のバイト数
+  char* output = result.data();                                                 ///< 変換結果の書き込み位置
+  size_t output_size = result.size();                                           ///< 変換結果の空きバイト数
+  const size_t status = iconv(                                                  ///< CP932の文字列をUTF-8へ変換する
+      converter, &input, &input_size, &output, &output_size);
+  iconv_close(converter);
+  if (status == static_cast<size_t>(-1)) {                                      // 未定義文字などで変換に失敗したら
+    return nullopt;
+  }
+  result.resize(result.size() - output_size);
+  return result;
+}
+
 /** @brief UTF-8文字列をShift-JIS文字列へ変換する */
 optional<string> Utf8ToShiftJis(                                                // UTF-8文字列をShift-JIS文字列へ変換する
     string_view text) {                                                         ///< (i)UTF-8文字列
@@ -196,13 +251,29 @@ optional<TextEncoding> TextEncodingDetector::Detect() const noexcept {          
   if (!has_non_ascii_) {                                                        // ASCII以外のバイトがなければ
     return TextEncoding::kAscii;
   }
-  if (utf8_valid_) {                                                            // 全テキストがUTF-8として有効なら
-    return TextEncoding::kUtf8;
-  }
   if (shift_jis_valid_) {                                                       // 全テキストがShift-JISとして有効なら
     return TextEncoding::kShiftJis;
   }
+  if (utf8_valid_) {                                                            // 全テキストがUTF-8として有効なら
+    return TextEncoding::kUtf8;
+  }
   return nullopt;
+}
+
+/** @brief MIDIテキストをその場で判別し、画面表示用UTF-8へ変換する */
+string EncodeMidiTextForConsole(                                                // MIDIテキストをその場で判別し、画面表示用UTF-8へ変換する
+    string_view text) {                                                         ///< (i)元の文字コードのMIDIテキスト
+  TextEncodingDetector detector;                                                ///< 表示対象の文字コード判別器
+  detector.Add(text);
+  const auto encoding = detector.Detect();                                      ///< Shift-JIS優先の判別結果
+  if (!encoding) {                                                              // 文字コードを判別できなければ
+    return "[文字コードを判別できないため、表示を省略しました。]";
+  }
+  if (encoding != TextEncoding::kShiftJis) {                                    // ASCIIまたはUTF-8なら
+    return string{text};
+  }
+  const auto converted = ShiftJisToUtf8(text);                                  ///< 表示用のコピーだけをUTF-8へ変換する
+  return converted.value_or("[文字コードを変換できないため、表示を省略しました。]");
 }
 
 /** @brief UTF-8文字列をMMLの出力文字コードへ変換する */

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "endian.h"
+#include "text_encoding.h"
 
 using std::cerr, std::flush;
 using std::dec, std::hex;
@@ -243,7 +244,7 @@ int Midi::Decode(                                                               
               "デバイス名(音源名)",
           };                                                                    ///< メタイベント種別名の一覧
           cerr << text_name[ope.status1]                                        // テキスト名
-               << ":\"" << ope.ex_data.c_str() << "\"\n";                       // テキスト表示
+               << ":\"" << EncodeMidiTextForConsole(ope.ex_data) << "\"\n";     // 元データを維持してUTF-8で表示
           ope_list.push_back(ope);                                              // 制御をリストに追加
         }
         break;
@@ -1678,7 +1679,7 @@ void Midi::PrintAllOperate(void) const                                          
       cerr << "(" << hex << ope.time << "," << static_cast<uint16_t>(ope.status) << ","
            << static_cast<uint16_t>(ope.status1) << "," << static_cast<uint16_t>(ope.status2); // 表示
       if ((0xFF == ope.status) && (0x01 <= ope.status1) && (0x1F >= ope.status1)) { // SysExのテキストなら
-        cerr << ",\"" << ope.ex_data << "\"";                                   // 表示
+        cerr << ",\"" << EncodeMidiTextForConsole(ope.ex_data) << "\"";         // 元データを維持してUTF-8で表示
       }
       cerr << ") " << flush;
     }

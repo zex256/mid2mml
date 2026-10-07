@@ -100,14 +100,30 @@ $cases = @(
         OutputEncoding = $utf8
     },
     [pscustomobject]@{
-        Name = 'ambiguous-utf8'
+        Name = 'ambiguous-shift-jis'
         Title = [byte[]](0xC2, 0xA2)
-        OutputEncoding = $utf8
+        OutputEncoding = $shiftJis
     },
     [pscustomobject]@{
         Name = 'shift-jis'
         Title = $shiftJis.GetBytes('Shift-JIS曲名')
         OutputEncoding = $shiftJis
+    },
+    [pscustomobject]@{
+        Name = 'shift-jis-extension'
+        Title = $shiftJis.GetBytes('ﾘｰﾄﾞ①髙')
+        OutputEncoding = $shiftJis
+    },
+    [pscustomobject]@{
+        Name = 'utf8-only'
+        Title = $utf8.GetBytes('曲名😀')
+        OutputEncoding = $utf8
+    },
+    [pscustomobject]@{
+        Name = 'invalid'
+        Title = [byte[]](0x81)
+        OutputEncoding = $utf8
+        DisplayTitle = '[文字コードを判別できないため、表示を省略しました。]'
     }
 )
 
@@ -126,6 +142,41 @@ foreach ($case in $cases) {
     }
     if ([Console]::OutputEncoding.CodePage -ne $originalCodePage) {
         throw "Console output code page was not restored: $($case.Name)"
+    }
+
+    # GUIと同じUTF-8指定で標準出力・標準エラーを受け取り、その場の表示を検証
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $resolvedExecutable
+    $startInfo.Arguments = '"' + $midiPath + '"'
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.StandardOutputEncoding = $utf8
+    $startInfo.StandardErrorEncoding = $utf8
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    try {
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $process.WaitForExit()
+        $stdout = $stdoutTask.GetAwaiter().GetResult()
+        $stderr = $stderrTask.GetAwaiter().GetResult()
+        if ($process.ExitCode -ne 0) {
+            throw "Captured encoding test conversion failed: $($case.Name)"
+        }
+        if ($case.Name -eq 'invalid') {
+            $expectedTitle = $case.DisplayTitle
+        } else {
+            $expectedTitle = $case.OutputEncoding.GetString($case.Title)
+        }
+        if (-not $stderr.Contains('曲名/トラック名:"' + $expectedTitle + '"')) {
+            throw "MIDI title was not displayed correctly as UTF-8: $($case.Name)"
+        }
+        if ($stderr.IndexOf($expectedTitle) -gt $stderr.IndexOf('done.')) {
+            throw "MIDI title display was deferred until conversion completed."
+        }
+    }
+    finally {
+        $process.Dispose()
     }
 
     $mmlBytes = [System.IO.File]::ReadAllBytes($mmlPath)

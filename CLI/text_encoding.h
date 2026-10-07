@@ -20,7 +20,7 @@ class TextEncodingDetector {
   void Add(                                                                     // 判別対象のMIDIテキストを追加する
       string_view text) noexcept;                                               ///< (i)判別対象のMIDIテキスト
 
-  /** @brief 追加されたMIDIテキストの文字コードを返す */
+  /** @brief 追加されたMIDIテキストの文字コードをShift-JIS優先で返す */
   [[nodiscard]] optional<TextEncoding> Detect() const noexcept;                 // 追加されたMIDIテキストの文字コードを返す
 
  private:
@@ -28,6 +28,14 @@ class TextEncodingDetector {
   bool utf8_valid_{true};                                                       ///< 全テキストがUTF-8として有効か
   bool shift_jis_valid_{true};                                                  ///< 全テキストがShift-JISとして有効か
 };
+
+/**
+ * @brief MIDIテキストをその場で判別し、画面表示用UTF-8へ変換する
+ * @param text (i)元の文字コードのMIDIテキスト
+ * @return 表示用文字列、判別・変換失敗時は表示を省略した理由
+ */
+[[nodiscard]] string EncodeMidiTextForConsole(
+    string_view text);
 
 /**
  * @brief UTF-8文字列をMMLの出力文字コードへ変換する
