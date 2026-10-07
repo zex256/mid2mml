@@ -41,6 +41,10 @@ Testing/
 CLI/tests/output/
 .build-temp/
 
+# Local GUI settings
+mid2mmlGUI.json
+mid2mmlGUI.json.tmp
+
 # AI assistant instructions and local configuration
 **/AGENTS.md
 **/AGENTS.override.md

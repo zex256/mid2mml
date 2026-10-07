@@ -117,7 +117,15 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
-  <data name="$this.Icon" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>../Assets/mid2mml.ico;System.Drawing.Icon, System.Drawing.Common</value>
+  <assembly alias="System.Drawing" name="System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a" />
+  <data name="$this.Icon" type="System.Drawing.Icon, System.Drawing" mimetype="application/x-microsoft.net.object.bytearray.base64">
+    <value>
+        AAABAAEAEBAQAAEABAAoAQAAFgAAACgAAAAQAAAAIAAAAAEABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+        AAAAAAAAAACAAACAAAAAgIAAgAAAAIAAgACAgAAAgICAAMDAwAAAAP8AAP8AAAD//wD/AAAA/wD/AP//
+        AAD///8AEREREREREREbu7szO7s7sbsDsQEBsAMAsAA7ERO3C3C3AAu7u7u7sbtwu7ERERERG7u7sRER
+        ERHx8fHx8fHxEff39/f39/cA9/f39/f39wAPf3APf3D3AAAAAAAAAAAA9/f39w/3///39/f39/cA9/f3
+        9wAP9/cPD39w9wD3D/cAAPAEAADwBAAA8AQAAPAEAADwBAAA8AQAAPAEAADwBAAD8AQAA/AEhhPwBP//
+        8AQAgPAEAAzwBAOC8ASEyPAE
+</value>
   </data>
 </root>

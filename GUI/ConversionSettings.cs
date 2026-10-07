@@ -17,4 +17,5 @@ internal sealed record ConversionSettings
   public required bool MergeDrums { get; init; }
   public required int DrumMode { get; init; }
   public bool UseLfo { get; init; } = true;
+  public bool TrimLeadingSilence { get; init; } = true;
 }

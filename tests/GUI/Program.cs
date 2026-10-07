@@ -13,7 +13,20 @@ internal static class Program
     ApplicationConfiguration.Initialize();
     string directory = Path.Combine(Path.GetTempPath(), "mid2mml-gui-test-" + Guid.NewGuid().ToString("N"));
     Directory.CreateDirectory(directory);
-    string path = Path.Combine(directory, "settings.json");
+    string path = Path.Combine(directory, "mid2mmlGUI.json");
+    string originalDirectory = Environment.CurrentDirectory;
+    try
+    {
+      Environment.CurrentDirectory = directory;
+      string settingsPath = (string)typeof(MainForm).GetProperty("SettingsPath",
+        BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+      Assert(settingsPath == Path.Combine(AppContext.BaseDirectory, "mid2mmlGUI.json"),
+        "Settings must stay beside the EXE regardless of the working directory.");
+    }
+    finally
+    {
+      Environment.CurrentDirectory = originalDirectory;
+    }
     using var form = new MainForm();
     // 透明な検証フォームでハンドルと実際のレイアウトを作り、利用者の画面には表示しない。
     form.ShowInTaskbar = false;
@@ -34,12 +47,18 @@ internal static class Program
     Field<NumericUpDown>(form, "_pitchThreshold").Value = 7;
     Field<CheckBox>(form, "_mergeDrums").Checked = false;
     Field<CheckBox>(form, "_useLfo").Checked = false;
+    Field<CheckBox>(form, "_trimLeadingSilence").Checked = false;
+    Assert(Field<TextBox>(form, "_commandPreview").Text.Contains("-t0"), "Silence trim event must update the preview.");
     Assert(Field<TextBox>(form, "_commandPreview").Text.Contains("-l0"), "LFO event must update the preview.");
     Field<ComboBox>(form, "_drumMode").SelectedIndex = 0;
     Call(form, "SaveSettings", path);
     string saved = File.ReadAllText(path);
     Call(form, "_reset_Click", form, EventArgs.Empty);
+    Assert(Field<TextBox>(form, "_channels").Text == "ABCabMNOXYZPQRSTUVWGHIJKLF", "Reset must restore the new channel order.");
+    Assert(Field<NumericUpDown>(form, "_volumeThreshold").Value == 15, "Reset must restore volume threshold 15.");
+    Assert(Field<NumericUpDown>(form, "_pitchThreshold").Value == 50, "Reset must restore pitch threshold 50 cents.");
     Assert(Field<CheckBox>(form, "_useLfo").Checked, "Reset must enable LFO.");
+    Assert(Field<CheckBox>(form, "_trimLeadingSilence").Checked, "Reset must enable silence trimming.");
     Field<TextBox>(form, "_programPath").Text = "changed.exe";
     Field<TextBox>(form, "_midiPath").Text = "changed.mid";
     Field<TextBox>(form, "_ppmckBin").Text = @"C:\changed\bin";
@@ -52,10 +71,12 @@ internal static class Program
     var oldSettings = JsonNode.Parse(saved)!;
     oldSettings.AsObject().Remove("PpmckBin");
     oldSettings.AsObject().Remove("UseLfo");
+    oldSettings.AsObject().Remove("TrimLeadingSilence");
     File.WriteAllText(path, oldSettings.ToJsonString());
     Call(form, "LoadSettings", path);
     Assert(Field<TextBox>(form, "_ppmckBin").Text == @"D:\mck\bin", "Old settings must use the designer-compatible bin default.");
     Assert(Field<CheckBox>(form, "_useLfo").Checked, "Old settings must default to LFO enabled.");
+    Assert(Field<CheckBox>(form, "_trimLeadingSilence").Checked, "Old settings must default to silence trimming enabled.");
 
     // 不正JSON、範囲外値、非整数値、未対応版、必須キー欠落では画面を部分更新しない。
     foreach (string bad in new[] { "{broken", "{}", Change(saved, "PitchLimit", 129),
@@ -127,8 +148,22 @@ internal static class Program
   {
     form.Size = form.MinimumSize;
     form.PerformLayout();
+    var heading = Field<Label>(form, "heading");
+    Assert(heading.Top == 0, "Heading must have no top layout gap.");
+    Assert(TextRenderer.MeasureText(heading.Text, heading.Font).Height <= heading.ClientSize.Height,
+      "Heading text must fit in the reduced height.");
     var inputGrid = Field<TableLayoutPanel>(form, "inputGrid");
+    var noteGrid = Field<TableLayoutPanel>(form, "noteGrid");
+    Assert(noteGrid.GetRow(Field<ComboBox>(form, "_drumMode")) == 3 &&
+      noteGrid.GetRow(Field<Label>(form, "drumLabel")) == 3, "Drum mode must be on the fourth row.");
+    Assert(noteGrid.GetRow(Field<CheckBox>(form, "_mergeDrums")) == 4 &&
+      noteGrid.GetRow(Field<Label>(form, "mergeLabel")) == 4, "Drum merge must be on the fifth row.");
+    Assert(Field<ComboBox>(form, "_drumMode").TabIndex < Field<CheckBox>(form, "_mergeDrums").TabIndex,
+      "Drum option tab order must follow the visual row order.");
     var lfoLabel = Field<Label>(form, "lfoLabel");
+    var silenceLabel = Field<Label>(form, "trimLeadingSilenceLabel");
+    Assert(TextRenderer.MeasureText(silenceLabel.Text, silenceLabel.Font).Width <= silenceLabel.ClientSize.Width,
+      "Silence trim label must fit at the minimum form size.");
     Assert(lfoLabel.Text == "LFO(MPコマンド)使用 -l", "LFO label must explain the MP command.");
     Assert(TextRenderer.MeasureText(lfoLabel.Text, lfoLabel.Font).Width <= lfoLabel.ClientSize.Width,
       "LFO label must fit at the minimum form size.");
@@ -137,7 +172,7 @@ internal static class Program
     Assert(Field<Label>(form, "midiLabel").Text == "入力MIDIファイル", "MIDI label must use the updated wording.");
     Assert(Field<TextBox>(form, "_midiPath").TabIndex < Field<TextBox>(form, "_programPath").TabIndex,
       "Tab order must follow the visual row order.");
-    foreach (string name in new[] { "_ppmckBin", "_browsePpmckBin", "_convertNsf", "_useLfo", "lfoLabel" })
+    foreach (string name in new[] { "_ppmckBin", "_browsePpmckBin", "_convertNsf", "_useLfo", "lfoLabel", "_trimLeadingSilence", "trimLeadingSilenceLabel" })
     {
       var control = Field<Control>(form, name);
       Assert(control.Parent!.ClientRectangle.Contains(control.Bounds), "Control must not be clipped: " + name);

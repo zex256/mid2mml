@@ -27,14 +27,15 @@ enum class DrumMode : uint8_t { kNoise = 1, kDpcm = 2, kNoiseAndDpcm = 3 };
 
 /** @brief コマンドラインから得られた変換設定 */
 struct ConverterOptions {
+  bool trim_leading_silence{true};                                              ///< 曲冒頭の無音区間を切詰（既定値は有効）
   bool use_lfo{true};                                                           ///< LFO(MPコマンド)使用フラグ（既定値は使用）
   string midi_file;                                                             ///< 入力MIDIファイルのUTF-8パス
-  string channels{"ABCMNOabFXYZPQRSTUVWGHIJKL"};                                ///< チャンネル割当順
+  string channels{"ABCabMNOXYZPQRSTUVWGHIJKLF"};                                ///< チャンネル割当順
   uint16_t resolution{8};                                                       ///< 音符分解能(TimeBase)8=32/4
   Mml::VolumeMode volume_mode{Mml::VolumeMode::kToneAndVariable};               ///< 音量モード
-  uint16_t volume_definition_threshold{60};                                     ///< 音量定義数の間引き閾値
+  uint16_t volume_definition_threshold{15};                                     ///< 音量定義数の間引き閾値
   uint16_t pitch_envelope_limit{15};                                            ///< ピッチ最大定義数
-  uint16_t pitch_envelope_threshold{5};                                         ///< ピッチ最低変化量閾値（セント）
+  uint16_t pitch_envelope_threshold{50};                                        ///< ピッチ最低変化量閾値（セント）
   double repeated_note_trim_ratio{0.25};                                        ///< 重複音符の切詰率
   bool merge_percussion_to_channel_9{true};                                     ///< 打楽器チャンネル統合
   DrumMode drum_mode{DrumMode::kNoiseAndDpcm};                                  ///< 打楽器音源割当モード
@@ -283,6 +284,17 @@ optional<ConverterOptions> ConverterOptions::Parse(                             
       }
       break;
 
+    case 't':                                                                   // 曲冒頭の無音区間を切詰 -t0:無効 -t1:有効
+      {
+        uint8_t value{};                                                        ///< 曲冒頭の無音区間を切詰するフラグ
+        if (!ParseUnsigned(arg.substr(2), value) || value > 1) {                // 0または1でなければ
+          error_message = InvalidOption(arg, "曲冒頭の無音区間を切詰は0または1で指定してください");
+          return nullopt;
+        }
+        options.trim_leading_silence = value != 0;                              // 曲冒頭の無音区間を切詰するか設定
+      }
+      break;
+
     case 'l':                                                                   // LFO(MPコマンド)使用 -l0:不使用 -l1:使用
       {
         uint8_t value{};                                                        ///< LFO(MPコマンド)使用フラグ
@@ -412,7 +424,9 @@ int Mid2Mml(                                                                    
     return 1;
   }
 
-  midi.BlankTrim();                                                             // 曲先頭の空白を切り詰める
+  if (options.trim_leading_silence) {                                           // 曲冒頭の無音区間を切詰が有効なら
+    midi.BlankTrim();                                                           // 曲冒頭の無音区間を切詰
+  }
   midi.ChangeResolution(options.resolution);                                    // MML用の分解能へ変更
   midi.ChangeTimeType(Midi::TimeType::kAbsolute);                               // 絶対時間へ変更
 

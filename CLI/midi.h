@@ -250,8 +250,8 @@ class Midi {
   /** @brief 先頭トラックのテンポ・拍子・マーカーを全トラックへコピーする */
   void CopyTempoAllTrack(void);                                                 // 先頭トラックのテンポ・拍子・マーカーを全トラックへコピーする
 
-  /** @brief 曲先頭の空白を小節単位で切り詰める */
-  void BrankTrim() { BlankTrim(); }                                             // 曲先頭の空白を小節単位で切り詰める
+  /** @brief 曲冒頭の無音区間を切詰（小節単位、旧関数名の互換用） */
+  void BrankTrim() { BlankTrim(); }                                             // 曲冒頭の無音区間を切詰
 
   /**
    * @brief MIDIフォーマット0または1へ変換する
@@ -274,8 +274,8 @@ class Midi {
   void ChangeNoteEndType(                                                       // ノートオフの表現を0x80または0x90ベロシティ0へ切り替える
       uint16_t new_note_end = 0x90);                                            ///< (i)変換後のノートオフステータス
 
-  /** @brief 曲先頭の空白を拍子に基づく小節単位で切り詰める */
-  void BlankTrim();                                                             // 曲先頭の空白を拍子に基づく小節単位で切り詰める
+  /** @brief 曲冒頭の無音区間を切詰（拍子に基づく小節単位） */
+  void BlankTrim();                                                             // 曲冒頭の無音区間を切詰
 
   /** @brief 全MIDIイベントをデバッグ用に表示する */
   void PrintAllOperate(void) const;                                             // 全MIDIイベントをデバッグ用に表示する

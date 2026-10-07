@@ -1563,8 +1563,8 @@ void Midi::CopyTempoAllTrack(void)                                              
   }
 }
 
-/** @brief 曲先頭の空白を拍子に基づく小節単位で切り詰める */
-void Midi::BlankTrim(void)                                                      // 曲先頭の空白を拍子に基づく小節単位で切り詰める
+/** @brief 曲冒頭の無音区間を切詰（拍子に基づく小節単位） */
+void Midi::BlankTrim(void)                                                      // 曲冒頭の無音区間を切詰
 {
   ChengeTimeType(TimeType::kAbsolute);                                          // 絶対時間に変更
   // 最初の音符位置を調べる

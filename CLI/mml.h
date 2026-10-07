@@ -198,7 +198,7 @@ class Mml {
      * @param vol_def_threshold (i)音量定義を間引く登録数の閾値
      */
     void AssignVolume(                                                          // 音量定義を音色へ割り当てる
-        uint16_t vol_def_threshold = 64);                                       ///< (i)音量登録数間引き閾値
+        uint16_t vol_def_threshold = 15);                                       ///< (i)音量登録数間引き閾値
 
     /**
      * @brief 音量定義の値を指定割合で調整する
@@ -319,7 +319,7 @@ class Mml {
     /** @brief ピッチエンベロープ管理情報を初期化する */
     Pitch()                                                                     // ピッチエンベロープ管理情報を初期化する
         : register_max_(128),
-          register_threshold_(5),
+          register_threshold_(50),
           envelope_def_() {}
 
     /**
@@ -450,7 +450,7 @@ class Mml {
    */
   void Load(                                                                    // MIDIクラスから必要な情報を読み込み、MML用中間情報を作成する
       const Midi& midi,                                                         ///< (i)Midiクラス
-      string ch_str = "ABCMNOabFXYZPQRSTUVWGHIJKL");                            ///< (i)チャンネル文字列(※D,Eチャンネルは9chからの変換固定のため含てはならない)
+      string ch_str = "ABCabMNOXYZPQRSTUVWGHIJKLF");                            ///< (i)チャンネル文字列(※D,Eチャンネルは9chからの変換固定のため含てはならない)
 
   /**
    * @brief MMLファイルへ保存する
@@ -504,7 +504,7 @@ class Mml {
    * @param vol_def_threshold (i)音量定義を間引く登録数の閾値
    */
   void AssignVolume(                                                            // 音量定義を割り当てる
-      uint16_t vol_def_threshold = 64)                                          ///< (i)音量登録数間引き閾値
+      uint16_t vol_def_threshold = 15)                                          ///< (i)音量登録数間引き閾値
   {
     tone_.AssignVolume(vol_def_threshold);                                      // 音量割当て
   }

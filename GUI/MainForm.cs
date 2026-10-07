@@ -9,7 +9,7 @@ namespace mid2mmlGUI;
 /// <summary>MIDIからMML・NSFへの変換条件を受け取り、外部コマンドの実行結果を表示するフォーム。</summary>
 public sealed partial class MainForm : Form
 {
-  private const string DefaultChannels = "ABCMNOabFXYZPQRSTUVWGHIJKL";
+  private const string DefaultChannels = "ABCabMNOXYZPQRSTUVWGHIJKLF";
   private const string AllowedChannels = "ABCFGHIJKLMNOPQRSTUVWXYZab";
   private static readonly int[] Resolutions = [4, 8, 16, 32, 64, 128, 256];
 
@@ -85,6 +85,9 @@ public sealed partial class MainForm : Form
         "パーカッションチャンネルはこの設定の対象外です。\n" +
         "重複音符により新トラックが生成されたかどうかは、\n" +
         "中間MIDIファイルを出力していますので、そちらを確認して下さい。");
+    _tips.SetToolTip(_trimLeadingSilence,
+      "曲冒頭の無音区間を、拍子に基づく小節単位で切詰します。既定値は有効です。\n" +
+      "無効にすると冒頭の無音区間を維持します。中間MIDIは変わりません。");
     _tips.SetToolTip(_useLfo,
         "LFO(MPコマンド)使用を設定します。既定値は使用です。\n" +
         "使用時は@MP定義とMPコマンドを出力します。\n" +
@@ -116,7 +119,7 @@ public sealed partial class MainForm : Form
         "音量エンベロープ定義の数を間引き始める件数の閾値を指定します。\n" +
         "これは音量エンベロープ定義が増え過ぎるのを抑制する為の機能です。\n" +
         "（音量値そのものを制限するものではありません。）\n" +
-        "指定可能な値は0～65535、既定値は60です。\n" +
+        "指定可能な値は0～65535、既定値は15です。\n" +
         "0を指定すると最大限に間引く方向に働き、非常に大きい値を指定すると\n" +
         "実質的に間引きを無効にします。\n" +
         "登録数が閾値以上になったときに段階的に間引くため、最終的な登録数を\n" +
@@ -136,7 +139,7 @@ public sealed partial class MainForm : Form
         "音源やノート番号によらず同じ基準で判定します。\n" +
         "これは微細な変化では定義しないことにより、定義数を抑制するための機能です。\n" +
         "（ピッチエンベロープ値の範囲を制限するものではありません。）\n" +
-        "指定可能な値は0～65535セント、既定値は5セントです。\n" +
+        "指定可能な値は0～65535セント、既定値は50セントです。\n" +
         "0を指定すると、変化量による登録除外を行いません。");
     // 出力先と上書きの説明は、入力欄のほかラベルと参照ボタンでも確認できるようにする。
     const string outputTip = "入力と同じフォルダに .mml と中間MIDIを保存します。同名ファイルは上書きされます。";
@@ -151,11 +154,12 @@ public sealed partial class MainForm : Form
     _resolution.SelectedIndex = Array.IndexOf(Resolutions, 32);
     _trim.Value = 25;
     _volumeMode.SelectedIndex = 3;
-    _volumeThreshold.Value = 60;
+    _volumeThreshold.Value = 15;
     _pitchLimit.Value = 15;
-    _pitchThreshold.Value = 5;
+    _pitchThreshold.Value = 50;
     _mergeDrums.Checked = true;
     _useLfo.Checked = true;
+    _trimLeadingSilence.Checked = true;
     _drumMode.SelectedIndex = 2;
     UpdatePreview();
   }
@@ -251,10 +255,9 @@ public sealed partial class MainForm : Form
        extension.Equals(".smf", StringComparison.OrdinalIgnoreCase)) ? paths[0] : null;
   }
 
-  /// <summary>EXE配置先の書き込み権限に依存しない、ユーザー別の設定保存先。</summary>
+  /// <summary>EXEと同じディレクトリに配置する、持ち運び可能な設定保存先。</summary>
   private static string SettingsPath => Path.Combine(
-    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-    "mid2mmlGUI", "settings.json");
+    AppContext.BaseDirectory, "mid2mmlGUI.json");
 
   /// <summary>保存データ全体を検証してから画面へ復元する。不正な場合は既定値を維持する。</summary>
   private void LoadSettings(string? path = null)
@@ -294,6 +297,7 @@ public sealed partial class MainForm : Form
       _pitchThreshold.Value = settings.PitchThreshold;
       _mergeDrums.Checked = settings.MergeDrums;
       _useLfo.Checked = settings.UseLfo;
+      _trimLeadingSilence.Checked = settings.TrimLeadingSilence;
       _drumMode.SelectedIndex = settings.DrumMode;
     }
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
@@ -321,6 +325,7 @@ public sealed partial class MainForm : Form
         PitchThreshold = _pitchThreshold.Value,
         MergeDrums = _mergeDrums.Checked,
         UseLfo = _useLfo.Checked,
+        TrimLeadingSilence = _trimLeadingSilence.Checked,
         DrumMode = _drumMode.SelectedIndex
       };
       path ??= SettingsPath;
@@ -365,6 +370,12 @@ public sealed partial class MainForm : Form
 
   /// <summary>LFO(MPコマンド)使用の切り替えを実行コマンドの表示に反映する。</summary>
   private void _useLfo_CheckedChanged(object sender, EventArgs e)
+  {
+    UpdatePreview();
+  }
+
+  /// <summary>曲冒頭の無音区間を切詰する設定を実行コマンドの表示に反映する。</summary>
+  private void _trimLeadingSilence_CheckedChanged(object sender, EventArgs e)
   {
     UpdatePreview();
   }
@@ -435,6 +446,7 @@ public sealed partial class MainForm : Form
       "-n" + _trim.Value,
       _mergeDrums.Checked ? "-m1" : "-m0",
       _useLfo.Checked ? "-l1" : "-l0",
+      _trimLeadingSilence.Checked ? "-t1" : "-t0",
       "-d" + Math.Max(1, _drumMode.SelectedIndex + 1),
       midi
     ];

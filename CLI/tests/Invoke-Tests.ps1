@@ -16,18 +16,18 @@ $vrc7ToneScript = Join-Path $PSScriptRoot 'Invoke-Vrc7ToneTests.ps1'
 $fdsToneScript = Join-Path $PSScriptRoot 'Invoke-FdsToneTests.ps1'
 $definitionCommentScript = Join-Path $PSScriptRoot 'Invoke-DefinitionCommentTests.ps1'
 
-# 既定値と-c/-r明示指定が同じ結果になることを確認する。
+# 既定値と-c/-r/-vt/-pt明示指定が同じ結果になることを確認する。
 & $regressionScript -Executable $resolvedExecutable -SkipGoldenComparison
 $defaultMml = Join-Path $PSScriptRoot 'output\DPCM\DPCM.mml'
 $defaultMmlHash = (Get-FileHash -LiteralPath $defaultMml -Algorithm SHA256).Hash
-& $regressionScript -Executable $resolvedExecutable -ConverterArguments @('-c:ABCMNOabFXYZPQRSTUVWGHIJKL', '-r32') -SkipGoldenComparison
+& $regressionScript -Executable $resolvedExecutable -ConverterArguments @('-c:ABCabMNOXYZPQRSTUVWGHIJKLF', '-r32', '-vt15', '-pt50') -SkipGoldenComparison
 $explicitMmlHash = (Get-FileHash -LiteralPath $defaultMml -Algorithm SHA256).Hash
 if ($defaultMmlHash -ne $explicitMmlHash) {
-    throw 'Default channel order or resolution differs from the explicit -c/-r order.'
+    throw 'Default options differ from the explicit -c/-r/-vt/-pt values.'
 }
 
 # 従来のゴールデンデータは旧チャンネル順を明示して比較する。
-& $regressionScript -Executable $resolvedExecutable -ConverterArguments @('-c:GHIJKLABCPQRSTUVWabMNOXYZ', '-r128')
+& $regressionScript -Executable $resolvedExecutable -ConverterArguments @('-c:GHIJKLABCPQRSTUVWabMNOXYZ', '-r128', '-vt60', '-pt5')
 & $regressionScript -Executable $resolvedExecutable -ConverterArguments @(
     '-r128',
     '-vm3',
@@ -126,5 +126,6 @@ if ($output -notmatch [regex]::Escape('MIDIファイルを複数指定できま�
 & $fdsToneScript -Executable $resolvedExecutable
 & $definitionCommentScript -Executable $resolvedExecutable
 & (Join-Path $PSScriptRoot 'Invoke-LfoTests.ps1') -Executable $resolvedExecutable
+& (Join-Path $PSScriptRoot 'Invoke-LeadingSilenceTests.ps1') -Executable $resolvedExecutable
 
 Write-Host 'All converter option tests passed.'
