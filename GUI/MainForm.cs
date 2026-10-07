@@ -85,6 +85,10 @@ public sealed partial class MainForm : Form
         "パーカッションチャンネルはこの設定の対象外です。\n" +
         "重複音符により新トラックが生成されたかどうかは、\n" +
         "中間MIDIファイルを出力していますので、そちらを確認して下さい。");
+    _tips.SetToolTip(_useLfo,
+        "LFO(MPコマンド)使用を設定します。既定値は使用です。\n" +
+        "使用時は@MP定義とMPコマンドを出力します。\n" +
+        "不使用でも、MIDIピッチベンドのピッチエンベロープは出力します。");
     _tips.SetToolTip(_mergeDrums,
         "MIDIのSysExにより（チャンネル10以外の）パーカッションに設定された\n" +
         "トラックを、チャンネル10へ統合するかを指定します。\n" +
@@ -151,6 +155,7 @@ public sealed partial class MainForm : Form
     _pitchLimit.Value = 15;
     _pitchThreshold.Value = 5;
     _mergeDrums.Checked = true;
+    _useLfo.Checked = true;
     _drumMode.SelectedIndex = 2;
     UpdatePreview();
   }
@@ -288,6 +293,7 @@ public sealed partial class MainForm : Form
       _pitchLimit.Value = settings.PitchLimit;
       _pitchThreshold.Value = settings.PitchThreshold;
       _mergeDrums.Checked = settings.MergeDrums;
+      _useLfo.Checked = settings.UseLfo;
       _drumMode.SelectedIndex = settings.DrumMode;
     }
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
@@ -314,6 +320,7 @@ public sealed partial class MainForm : Form
         PitchLimit = _pitchLimit.Value,
         PitchThreshold = _pitchThreshold.Value,
         MergeDrums = _mergeDrums.Checked,
+        UseLfo = _useLfo.Checked,
         DrumMode = _drumMode.SelectedIndex
       };
       path ??= SettingsPath;
@@ -352,6 +359,12 @@ public sealed partial class MainForm : Form
 
   /// <summary>打楽器統合の切り替えを実行コマンドの表示に反映する。</summary>
   private void _mergeDrums_CheckedChanged(object sender, EventArgs e)
+  {
+    UpdatePreview();
+  }
+
+  /// <summary>LFO(MPコマンド)使用の切り替えを実行コマンドの表示に反映する。</summary>
+  private void _useLfo_CheckedChanged(object sender, EventArgs e)
   {
     UpdatePreview();
   }
@@ -421,6 +434,7 @@ public sealed partial class MainForm : Form
       "-pt" + _pitchThreshold.Value,
       "-n" + _trim.Value,
       _mergeDrums.Checked ? "-m1" : "-m0",
+      _useLfo.Checked ? "-l1" : "-l0",
       "-d" + Math.Max(1, _drumMode.SelectedIndex + 1),
       midi
     ];

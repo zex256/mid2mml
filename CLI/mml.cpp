@@ -806,7 +806,7 @@ void Mml::Tone::Set(                                                            
   case 'Y':                                                                     // FME7
   case 'Z':                                                                     // FME7
     // メロディLFO用
-    if ((lfo_cmd_.find(prg_no) == lfo_cmd_.end()) &&                            // LFOコマンドが登録されておらず、
+    if (use_lfo_ && (lfo_cmd_.find(prg_no) == lfo_cmd_.end()) &&                // LFO(MPコマンド)使用時に未登録の音色なら
         (63 >= serial_no_lfo_)) {                                               // 最大登録件数以内なら
       ostringstream cmd;                                                        ///< コマンド作成
       cmd << "MP" << serial_no_lfo_;
@@ -1198,53 +1198,55 @@ string Mml::Tone::Get(                                                          
   default:                                                                      // その他の値
     break;
   }
-  // LFO(MPコマンド)
-  switch (ch) {
-  case 'A':                                                                     // 2A03 矩形波
-  case 'B':                                                                     // 2A03 矩形波
-  case 'a':                                                                     // MMC5 矩形波
-  case 'b':                                                                     // MMC5 矩形波
-  case 'C':                                                                     // 2A03 三角波
-  case 'F':                                                                     // FDS
-  case 'G':                                                                     // VRC7
-  case 'H':                                                                     // VRC7
-  case 'I':                                                                     // VRC7
-  case 'J':                                                                     // VRC7
-  case 'K':                                                                     // VRC7
-  case 'L':                                                                     // VRC7
-  case 'M':                                                                     // VRC6 矩形波
-  case 'N':                                                                     // VRC6 矩形波
-  case 'O':                                                                     // VRC6 鋸波
-  case 'P':                                                                     // N106
-  case 'Q':                                                                     // N106
-  case 'R':                                                                     // N106
-  case 'S':                                                                     // N106
-  case 'T':                                                                     // N106
-  case 'U':                                                                     // N106
-  case 'V':                                                                     // N106
-  case 'W':                                                                     // N106
-  case 'X':                                                                     // FME7
-  case 'Y':                                                                     // FME7
-  case 'Z':                                                                     // FME7
-    // メロディLFO用
-    if (const auto it = lfo_cmd_.find(prg_no);                                  // LFOコマンドを検索し、
-        it != lfo_cmd_.end()) {                                                 // 登録されていたら
-      cmd_str += it->second;                                                    // コマンドを取得
-    } else {                                                                    // 未登録なら
-      ostringstream oss;                                                        ///< メッセージ編集
-      oss << "/* Lfo未登録PrgNo=" << static_cast<uint16_t>(prg_no) << " */";
-      cmd_str += oss.str();                                                     // メッセージを取得
+  // LFO(MPコマンド)使用時だけコマンドを追加する
+  if (use_lfo_) {                                                               // LFOが有効なら
+    switch (ch) {
+    case 'A':                                                                   // 2A03 矩形波
+    case 'B':                                                                   // 2A03 矩形波
+    case 'a':                                                                   // MMC5 矩形波
+    case 'b':                                                                   // MMC5 矩形波
+    case 'C':                                                                   // 2A03 三角波
+    case 'F':                                                                   // FDS
+    case 'G':                                                                   // VRC7
+    case 'H':                                                                   // VRC7
+    case 'I':                                                                   // VRC7
+    case 'J':                                                                   // VRC7
+    case 'K':                                                                   // VRC7
+    case 'L':                                                                   // VRC7
+    case 'M':                                                                   // VRC6 矩形波
+    case 'N':                                                                   // VRC6 矩形波
+    case 'O':                                                                   // VRC6 鋸波
+    case 'P':                                                                   // N106
+    case 'Q':                                                                   // N106
+    case 'R':                                                                   // N106
+    case 'S':                                                                   // N106
+    case 'T':                                                                   // N106
+    case 'U':                                                                   // N106
+    case 'V':                                                                   // N106
+    case 'W':                                                                   // N106
+    case 'X':                                                                   // FME7
+    case 'Y':                                                                   // FME7
+    case 'Z':                                                                   // FME7
+      // メロディLFO用
+      if (const auto it = lfo_cmd_.find(prg_no);                                // LFOコマンドを検索し、
+          it != lfo_cmd_.end()) {                                               // 登録されていたら
+        cmd_str += it->second;                                                  // コマンドを取得
+      } else {                                                                  // 未登録なら
+        ostringstream oss;                                                      ///< メッセージ編集
+        oss << "/* Lfo未登録PrgNo=" << static_cast<uint16_t>(prg_no) << " */";
+        cmd_str += oss.str();                                                   // メッセージを取得
+      }
+      break;
+
+    case 'D':                                                                   // 2A03 ノイズ
+      // ノイズLFO用
+      // 使わない
+      break;
+
+    case 'E':                                                                   // 2A03 DPCM
+      // LFO無し
+      break;
     }
-    break;
-
-  case 'D':                                                                     // 2A03 ノイズ
-    // ノイズLFO用
-    // 使わない
-    break;
-
-  case 'E':                                                                     // 2A03 DPCM
-    // LFO無し
-    break;
   }
   return EncodeSourceText(cmd_str);                                             // 出力文字コードへ変換したコマンドを返す
 }
@@ -1581,7 +1583,9 @@ int Mml::Save(                                                                  
   tone_.PutToneDef(ofs, tone_.color_def_f_);                                    // 音色：FDS
   tone_.PutToneDef(ofs, tone_.color_def_ghijkl_);                               // 音色：VRC7
   tone_.PutToneDef(ofs, tone_.color_def_pqrstuvw_);                             // 音色：N106
-  tone_.PutToneDef(ofs, tone_.lfo_def_);                                        // LFO
+  if (tone_.use_lfo_) {                                                         // LFO(MPコマンド)使用時だけ定義を出力する
+    tone_.PutToneDef(ofs, tone_.lfo_def_);
+  }
   if (VolumeMode::kToneBased & tone_.volume_mode_) {                            // 音色音量モードなら
     tone_.PutVolumeDef(ofs, tone_.volume_def_);                                 // 音量
   }

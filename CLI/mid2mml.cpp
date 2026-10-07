@@ -27,6 +27,7 @@ enum class DrumMode : uint8_t { kNoise = 1, kDpcm = 2, kNoiseAndDpcm = 3 };
 
 /** @brief コマンドラインから得られた変換設定 */
 struct ConverterOptions {
+  bool use_lfo{true};                                                           ///< LFO(MPコマンド)使用フラグ（既定値は使用）
   string midi_file;                                                             ///< 入力MIDIファイルのUTF-8パス
   string channels{"ABCMNOabFXYZPQRSTUVWGHIJKL"};                                ///< チャンネル割当順
   uint16_t resolution{8};                                                       ///< 音符分解能(TimeBase)8=32/4
@@ -282,6 +283,17 @@ optional<ConverterOptions> ConverterOptions::Parse(                             
       }
       break;
 
+    case 'l':                                                                   // LFO(MPコマンド)使用 -l0:不使用 -l1:使用
+      {
+        uint8_t value{};                                                        ///< LFO(MPコマンド)使用フラグ
+        if (!ParseUnsigned(arg.substr(2), value) || value > 1) {                // 0または1でなければ
+          error_message = InvalidOption(arg, "LFO(MPコマンド)使用は0または1で指定してください");
+          return nullopt;
+        }
+        options.use_lfo = value != 0;                                           // LFO(MPコマンド)使用を設定
+      }
+      break;
+
     default:                                                                    // 未知のオプション
       error_message = InvalidOption(arg, "未対応のオプションです");
       return nullopt;
@@ -405,6 +417,7 @@ int Mid2Mml(                                                                    
   midi.ChangeTimeType(Midi::TimeType::kAbsolute);                               // 絶対時間へ変更
 
   auto mml = make_unique<Mml>();                                                ///< MML変換結果
+  mml->SetLfoEnabled(options.use_lfo);                                          // MIDI読み込み前にLFO登録の可否を設定
   mml->SetPitchEnvelopeOptions(options.pitch_envelope_limit, options.pitch_envelope_threshold); // ピッチエンベロープの登録条件を設定
   mml->Load(midi, options.channels);                                            // MIDIからMML変換情報を読み込む
   mml->LoopPointConclusion();                                                   // ループ位置を決定

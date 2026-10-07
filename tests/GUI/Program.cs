@@ -33,10 +33,13 @@ internal static class Program
     Field<NumericUpDown>(form, "_pitchLimit").Value = 128;
     Field<NumericUpDown>(form, "_pitchThreshold").Value = 7;
     Field<CheckBox>(form, "_mergeDrums").Checked = false;
+    Field<CheckBox>(form, "_useLfo").Checked = false;
+    Assert(Field<TextBox>(form, "_commandPreview").Text.Contains("-l0"), "LFO event must update the preview.");
     Field<ComboBox>(form, "_drumMode").SelectedIndex = 0;
     Call(form, "SaveSettings", path);
     string saved = File.ReadAllText(path);
     Call(form, "_reset_Click", form, EventArgs.Empty);
+    Assert(Field<CheckBox>(form, "_useLfo").Checked, "Reset must enable LFO.");
     Field<TextBox>(form, "_programPath").Text = "changed.exe";
     Field<TextBox>(form, "_midiPath").Text = "changed.mid";
     Field<TextBox>(form, "_ppmckBin").Text = @"C:\changed\bin";
@@ -48,9 +51,11 @@ internal static class Program
     Assert(Field<TextBox>(form, "_commandPreview").Text.Contains(@"C:\ppmck\bin\ppmckc.exe"), "NSF command preview must restore.");
     var oldSettings = JsonNode.Parse(saved)!;
     oldSettings.AsObject().Remove("PpmckBin");
+    oldSettings.AsObject().Remove("UseLfo");
     File.WriteAllText(path, oldSettings.ToJsonString());
     Call(form, "LoadSettings", path);
     Assert(Field<TextBox>(form, "_ppmckBin").Text == @"D:\mck\bin", "Old settings must use the designer-compatible bin default.");
+    Assert(Field<CheckBox>(form, "_useLfo").Checked, "Old settings must default to LFO enabled.");
 
     // 不正JSON、範囲外値、非整数値、未対応版、必須キー欠落では画面を部分更新しない。
     foreach (string bad in new[] { "{broken", "{}", Change(saved, "PitchLimit", 129),
@@ -123,12 +128,16 @@ internal static class Program
     form.Size = form.MinimumSize;
     form.PerformLayout();
     var inputGrid = Field<TableLayoutPanel>(form, "inputGrid");
+    var lfoLabel = Field<Label>(form, "lfoLabel");
+    Assert(lfoLabel.Text == "LFO(MPコマンド)使用 -l", "LFO label must explain the MP command.");
+    Assert(TextRenderer.MeasureText(lfoLabel.Text, lfoLabel.Font).Width <= lfoLabel.ClientSize.Width,
+      "LFO label must fit at the minimum form size.");
     Assert(inputGrid.GetRow(Field<TextBox>(form, "_midiPath")) == 0, "MIDI input must be on the first row.");
     Assert(inputGrid.GetRow(Field<TextBox>(form, "_programPath")) == 1, "Converter input must be on the second row.");
     Assert(Field<Label>(form, "midiLabel").Text == "入力MIDIファイル", "MIDI label must use the updated wording.");
     Assert(Field<TextBox>(form, "_midiPath").TabIndex < Field<TextBox>(form, "_programPath").TabIndex,
       "Tab order must follow the visual row order.");
-    foreach (string name in new[] { "_ppmckBin", "_browsePpmckBin", "_convertNsf" })
+    foreach (string name in new[] { "_ppmckBin", "_browsePpmckBin", "_convertNsf", "_useLfo", "lfoLabel" })
     {
       var control = Field<Control>(form, name);
       Assert(control.Parent!.ClientRectangle.Contains(control.Bounds), "Control must not be clipped: " + name);

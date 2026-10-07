@@ -49,6 +49,7 @@ class Mml {
   /** @brief 音色・音量定義を管理するクラス */
   class Tone {
    public:
+    bool use_lfo_{true};                                                        ///< LFO定義・コマンドを使用するか
     VolumeMode volume_mode_;                                                    ///< 音量モード
     // 音色
     // ABabチャンネル MNチャンネル(音色番号+128)
@@ -479,6 +480,11 @@ class Mml {
       VolumeMode volume_mode) noexcept                                          ///< (i)音量モード
   {
     tone_.volume_mode_ = volume_mode;                                           // 音量モードを変更する
+  }
+
+  /** @brief LFO定義・コマンドの使用を設定する */
+  void SetLfoEnabled(bool enabled) noexcept {                                   // LFO定義・コマンドの使用を設定する
+    tone_.use_lfo_ = enabled;                                                   // LFO(MPコマンド)使用フラグを保存する
   }
 
   /**

@@ -125,5 +125,6 @@ if ($output -notmatch [regex]::Escape('MIDIファイルを複数指定できま�
 & $vrc7ToneScript -Executable $resolvedExecutable
 & $fdsToneScript -Executable $resolvedExecutable
 & $definitionCommentScript -Executable $resolvedExecutable
+& (Join-Path $PSScriptRoot 'Invoke-LfoTests.ps1') -Executable $resolvedExecutable
 
 Write-Host 'All converter option tests passed.'

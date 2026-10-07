@@ -31,6 +31,8 @@ namespace mid2mmlGUI
             _trim = new NumericUpDown();
             mergeLabel = new Label();
             _mergeDrums = new CheckBox();
+            _useLfo = new CheckBox();
+            lfoLabel = new Label();
             drumLabel = new Label();
             _drumMode = new InitialSelectionComboBox();
             soundGrid = new TableLayoutPanel();
@@ -411,6 +413,8 @@ namespace mid2mmlGUI
             soundGrid.Controls.Add(_pitchLimit, 1, 2);
             soundGrid.Controls.Add(pitchThresholdLabel, 0, 3);
             soundGrid.Controls.Add(_pitchThreshold, 1, 3);
+            soundGrid.Controls.Add(lfoLabel, 0, 4);
+            soundGrid.Controls.Add(_useLfo, 1, 4);
             soundGrid.Dock = DockStyle.Fill;
             soundGrid.Location = new Point(482, 3);
             soundGrid.Name = "soundGrid";
@@ -423,6 +427,24 @@ namespace mid2mmlGUI
             soundGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             soundGrid.Size = new Size(473, 170);
             soundGrid.TabIndex = 1;
+            //
+            // lfoLabel
+            //
+            lfoLabel.Dock = DockStyle.Fill;
+            lfoLabel.Name = "lfoLabel";
+            lfoLabel.Text = "LFO(MPコマンド)使用 -l";
+            lfoLabel.TextAlign = ContentAlignment.MiddleRight;
+            lfoLabel.TabIndex = 8;
+            //
+            // _useLfo
+            //
+            _useLfo.Checked = true;
+            _useLfo.CheckState = CheckState.Checked;
+            _useLfo.Dock = DockStyle.Fill;
+            _useLfo.Name = "_useLfo";
+            _useLfo.Text = "使用";
+            _useLfo.TabIndex = 9;
+            _useLfo.CheckedChanged += _useLfo_CheckedChanged;
             // 
             // volumeModeLabel
             // 
@@ -694,6 +716,8 @@ namespace mid2mmlGUI
     private NumericUpDown _trim;
     private Label mergeLabel;
     private CheckBox _mergeDrums;
+    private CheckBox _useLfo;
+    private Label lfoLabel;
     private Label drumLabel;
     private InitialSelectionComboBox _drumMode;
     private TableLayoutPanel soundGrid;
