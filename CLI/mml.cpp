@@ -1093,12 +1093,21 @@ string Mml::Tone::AdjustVolume(                                                 
   return oss.str();                                                             // 音量調節した定義を返す
 }
 
-/** @brief 登録済みの音質コマンドを取得する */
-string Mml::Tone::Get(                                                          // 登録済みの音質コマンドを取得する
+/** @brief 登録済みの音質・LFOコマンドを連結して取得する */
+string Mml::Tone::Get(                                                          // 従来の連結形式でコマンドを取得する
     const uint8_t& ch,                                                          ///< (i)チャンネル
     const uint8_t& prg_no) const                                                ///< (i)プログラム番号
 {
-  string cmd_str;                                                               ///< 返却する音質・LFOコマンド文字列
+  const Commands commands = GetCommands(ch, prg_no);                            ///< 個別に取得したコマンド
+  return commands.instrument + commands.op + commands.lfo;                      // 音色・OP・LFOの順で連結する
+}
+
+/** @brief 音色選択・OP・LFOを連結せずに取得する */
+Mml::Tone::Commands Mml::Tone::GetCommands(                                     // 音色選択・OP・LFOを個別に取得する
+    const uint8_t& ch,                                                          ///< (i)チャンネル
+    const uint8_t& prg_no) const                                                ///< (i)プログラム番号
+{
+  Commands commands;                                                            ///< 返却する音色選択・OP・LFOコマンド
   uint16_t shift_no(prg_no);                                                    ///< 重複しないプログラム番号
   switch (ch) {
   case 'M':                                                                     // VRC6 矩形波
@@ -1114,11 +1123,11 @@ string Mml::Tone::Get(                                                          
     // 矩形波Duty0～3用
     if (const auto it = color_cmd_abab_mn_.find(shift_no);                      // 矩形波音色を検索し、
         it != color_cmd_abab_mn_.end()) {                                       // 登録されていたら
-      cmd_str = it->second;                                                     // コマンドを取得
+      commands.instrument = it->second;                                         // コマンドを取得
     } else {                                                                    // 未登録なら
       ostringstream oss;                                                        ///< メッセージ編集
       oss << "/* 未登録PrgNo=" << static_cast<uint16_t>(prg_no) << " */";
-      cmd_str = oss.str();                                                      // メッセージを取得
+      commands.instrument = oss.str();                                          // メッセージを取得
     }
     break;
 
@@ -1126,18 +1135,18 @@ string Mml::Tone::Get(                                                          
     shift_no = ParMapChg(prg_no);                                               // パーカッション未登録部分をマップ
     if (const auto it = color_cmd_d_.find(shift_no);                            // ノイズ音色を検索し、
         it != color_cmd_d_.end()) {                                             // 登録されていたら
-      cmd_str = it->second;                                                     // コマンドを取得
+      commands.instrument = it->second;                                         // コマンドを取得
     }
     break;
 
   case 'F':                                                                     // FDS
     if (const auto it = color_cmd_f_.find(prg_no);                              // FDS音色を検索し、
         it != color_cmd_f_.end()) {                                             // 登録されていたら
-      cmd_str = it->second;                                                     // コマンドを取得
+      commands.instrument = it->second;                                         // コマンドを取得
     } else {                                                                    // 未登録なら
       ostringstream oss;                                                        ///< メッセージ編集
       oss << "/* 未登録PrgNo=" << static_cast<uint16_t>(prg_no) << " */";
-      cmd_str = oss.str();                                                      // メッセージを取得
+      commands.instrument = oss.str();                                          // メッセージを取得
     }
     break;
 
@@ -1147,12 +1156,14 @@ string Mml::Tone::Get(                                                          
   case 'J':                                                                     // VRC7
   case 'K':                                                                     // VRC7
   case 'L':                                                                     // VRC7
-    // VRC7音色コマンドを検索
-    if (const auto it = color_cmd_ghijkl_.find(prg_no);                         // VRC7音色を検索し、
+    // VRC7の共有音色設定とチャンネル別の音色選択を分ける
+    if (const auto it = color_cmd_ghijkl_.find(prg_no);                         // VRC7ユーザー音色を検索し、
         it != color_cmd_ghijkl_.end()) {                                        // 登録されていたら
-      cmd_str = it->second;                                                     // コマンドを取得
+      commands.instrument = "@@0";                                              // ユーザー音色を選択する
+      commands.op = it->second;                                                 // 共有音色設定は連結せずに保持する
+    } else {                                                                    // ユーザー音色がなければ
+      commands.instrument = "@@" + kToneDefVrc7Preset[prg_no];                  // プリセット音色を選択する
     }
-    // 未登録なら空文字列を返す（受け取り側でプリセット音色を選択するため）
     break;
 
   case 'P':                                                                     // N106
@@ -1167,11 +1178,11 @@ string Mml::Tone::Get(                                                          
     shift_no += static_cast<int>(ch - 'P') * 128;                               // 同じ波形でもチャンネル毎にバッファ番号を変えるため
     if (const auto it = color_cmd_pqrstuvw_.find(shift_no);                     // N106音色を検索し、
         it != color_cmd_pqrstuvw_.end()) {                                      // 登録されていたら
-      cmd_str = it->second;                                                     // コマンドを取得
+      commands.instrument = it->second;                                         // コマンドを取得
     } else {                                                                    // 未登録なら
       ostringstream oss;                                                        ///< メッセージ編集
       oss << "/* 未登録PrgNo=" << static_cast<uint16_t>(prg_no) << " */";
-      cmd_str = oss.str();                                                      // メッセージを取得
+      commands.instrument = oss.str();                                          // メッセージを取得
     }
     break;
 
@@ -1181,11 +1192,11 @@ string Mml::Tone::Get(                                                          
     // FME7音色コマンドを検索
     if (const auto it = color_cmd_xyz_.find(prg_no);                            // FME7音色を検索し、
         it != color_cmd_xyz_.end()) {                                           // 登録されていたら
-      cmd_str = it->second;                                                     // コマンドを取得
+      commands.instrument = it->second;                                         // コマンドを取得
     } else {                                                                    // 未登録なら
       ostringstream oss;                                                        ///< メッセージ編集
       oss << "/* 未登録PrgNo=" << static_cast<uint16_t>(prg_no) << " */";
-      cmd_str = oss.str();                                                      // メッセージを取得
+      commands.instrument = oss.str();                                          // メッセージを取得
     }
     break;
 
@@ -1230,11 +1241,11 @@ string Mml::Tone::Get(                                                          
       // メロディLFO用
       if (const auto it = lfo_cmd_.find(prg_no);                                // LFOコマンドを検索し、
           it != lfo_cmd_.end()) {                                               // 登録されていたら
-        cmd_str += it->second;                                                  // コマンドを取得
+        commands.lfo = it->second;                                              // コマンドを取得
       } else {                                                                  // 未登録なら
         ostringstream oss;                                                      ///< メッセージ編集
         oss << "/* Lfo未登録PrgNo=" << static_cast<uint16_t>(prg_no) << " */";
-        cmd_str += oss.str();                                                   // メッセージを取得
+        commands.lfo = oss.str();                                               // メッセージを取得
       }
       break;
 
@@ -1248,7 +1259,10 @@ string Mml::Tone::Get(                                                          
       break;
     }
   }
-  return EncodeSourceText(cmd_str);                                             // 出力文字コードへ変換したコマンドを返す
+  commands.instrument = EncodeSourceText(commands.instrument);                  // 音色選択の文字コードを変換する
+  commands.op = EncodeSourceText(commands.op);                                  // 共有音色設定の文字コードを変換する
+  commands.lfo = EncodeSourceText(commands.lfo);                                // LFO設定の文字コードを変換する
+  return commands;                                                              // 個別に出力を制御できるコマンドを返す
 }
 
 /** @brief 登録済みの音符コマンドを取得する */
@@ -1603,6 +1617,8 @@ int Mml::Save(                                                                  
     ofs << ch_str << "\tt" << first_tempo_ << '\n';                             // テンポを出力
   }
   // チャンネル先頭のコマンド出力
+  string previous_initial_op;                                                   ///< 初期値で最後に出力したVRC7のOPコマンド
+  char previous_initial_op_channel = '?';                                       ///< 最後にOPを出力したVRC7チャンネル
   for (const auto& ch_entry : ch_map_) {                                        // チャンネルマップループ
     string ch_str("? ");                                                        ///< 編集用チャンネル文字
     ch_str[0] = ch_entry.first;                                                 // チャンネルをセット
@@ -1632,12 +1648,22 @@ int Mml::Save(                                                                  
     }
     // 音色
     if (('G' <= ch_str[0]) && ('L' >= ch_str[0])) {                             // VRC7の場合
-      string cmd = tone_.Get(ch_str[0], ch_entry.second.first_prg_no);          ///< 音色コマンド
-      if (tone_.color_cmd_ghijkl_.count(ch_entry.second.first_prg_no) != 0) {   // ユーザー音色が登録されていたら
-        ofs << "\t@@0";                                                         // ユーザー音色を出力
-        ofs << cmd;                                                             // G～Lの先頭でOPコマンドとLFOコマンドを出力
-      } else {                                                                  // ユーザー音色が登録されてなければ
-        ofs << "\t@@" << kToneDefVrc7Preset[ch_entry.second.first_prg_no];      // プリセット音色を出力
+      const auto commands = tone_.GetCommands(                                  ///< 初期値の音色選択・共有音色・LFO
+          ch_str[0], ch_entry.second.first_prg_no);
+      ofs << "\t" << commands.instrument;                                       // 音色選択は各チャンネルに出力する
+      if (!commands.op.empty() && commands.op != previous_initial_op) {         // 前回と異なるOPだけ出力する
+        if (!previous_initial_op.empty()) {                                     // 既に共有音色を設定していたら
+          cerr << "警告: VRC7の初期OP設定がCh." << previous_initial_op_channel
+               << "の" << previous_initial_op << "からCh." << ch_str[0]
+               << "の" << commands.op << "へ変更されます。"
+               << "音色設定は全VRC7チャンネルで共有されるため競合しますが、変換を続行します。\n";
+        }
+        ofs << commands.op;                                                     // 異なるOPでも変換を継続して出力する
+        previous_initial_op = commands.op;                                      // 最後に実際に出力したOPを記録する
+        previous_initial_op_channel = ch_str[0];                                // 共有音色を設定したチャンネルを記録する
+      }
+      if (!commands.op.empty()) {                                               // ユーザー音色のLFO設定は従来どおり出力する
+        ofs << commands.lfo;                                                    // OPを省略してもチャンネル別のMPは出力する
       }
     } else if ('D' == ch_str[0]) {                                              // ノイズの場合
       ofs << "\t";
@@ -1805,12 +1831,10 @@ int Mml::Save(                                                                  
         if (prg_no != note.oct) {                                               // プログラム番号が変わったら
           prg_no = note.oct;                                                    // プログラム番号を更新
           if (('G' <= ch_str[0]) && ('L' >= ch_str[0])) {                       // VRC7の場合
-            string cmd = tone_.Get(ch_str[0], prg_no);                          ///< ユーザー音色取得
-            if (tone_.color_cmd_ghijkl_.count(prg_no) != 0) {                   // ユーザー音色が登録されていたら
-              ofs << "@@0";                                                     // ユーザー音色を出力
-              ofs << cmd;                                                       // G～Lの音色変更でOPコマンドとLFOコマンドを出力
-            } else {                                                            // ユーザー音色が登録されてなければ
-              ofs << "@@" << kToneDefVrc7Preset[prg_no];                        // プリセット音色を出力
+            const auto commands = tone_.GetCommands(ch_str[0], prg_no);         ///< 音色変更の各コマンド
+            ofs << commands.instrument << commands.op;                          // 音色選択とOPは従来どおり毎回出力する
+            if (!commands.op.empty()) {                                         // ユーザー音色なら
+              ofs << commands.lfo;                                              // 従来どおりMPコマンドも出力する
             }
           } else {                                                              // その他チャンネルの場合
             ofs << tone_.Get(ch_str[0], prg_no);                                // 音色コマンドを出力する
@@ -1852,12 +1876,10 @@ int Mml::Save(                                                                  
     if ((loop_prg_no != 255) && (loop_prg_no != prg_no)) {                      // プログラム番号がループ時点のプログラム番号と一致しなければ
       prg_no = loop_prg_no;                                                     // プログラム番号をループ時点のプログラム番号に更新
       if (('G' <= ch_str[0]) && ('L' >= ch_str[0])) {                           // VRC7の場合
-        string cmd = tone_.Get(ch_str[0], prg_no);                              ///< ユーザー音色取得
-        if (tone_.color_cmd_ghijkl_.count(prg_no) != 0) {                       // ユーザー音色が登録されていたら
-          ofs << "@@0";                                                         // ユーザー音色を出力
-          ofs << cmd;                                                           // G～Lのループ復帰でOPコマンドとLFOコマンドを出力
-        } else {                                                                // ユーザー音色が登録されてなければ
-          ofs << "@@" << kToneDefVrc7Preset[prg_no];                            // プリセット音色を出力
+        const auto commands = tone_.GetCommands(ch_str[0], prg_no);             ///< ループ復帰の各コマンド
+        ofs << commands.instrument << commands.op;                              // 音色選択とOPは従来どおり毎回出力する
+        if (!commands.op.empty()) {                                             // ユーザー音色なら
+          ofs << commands.lfo;                                                  // 従来どおりMPコマンドも出力する
         }
       } else {                                                                  // その他チャンネルの場合
         ofs << tone_.Get(ch_str[0], prg_no);                                    // 音色コマンドを出力する
