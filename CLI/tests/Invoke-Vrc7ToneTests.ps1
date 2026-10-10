@@ -61,9 +61,9 @@ foreach ($channel in 'GHIJKL'.ToCharArray()) {
     }
 }
 
-# 同時に使用するVRC7チャンネルの初期OPだけを比較し、音色変更・ループの検証は上で維持する。
+# 共有OPは担当だけに出力し、他チャンネルは一致時だけユーザー音色を選ぶ。
 function Test-SharedInitialTone([string]$Name, [string]$Channels, [byte[]]$Programs,
-    [string[]]$ExpectedOps, [int]$Warnings, [int]$Lfo = 1) {
+    [string[]]$ExpectedOps, [int]$Warnings, [int]$Lfo = 1, [string[]]$ExpectedInstruments = @()) {
     $bytes = [System.Collections.Generic.List[byte]]::new()
     $bytes.AddRange([byte[]]@(0x4D,0x54,0x68,0x64,0,0,0,6,0,1,0,$Programs.Length,0,96))
     for ($index = 0; $index -lt $Programs.Length; ++$index) {
@@ -79,7 +79,7 @@ function Test-SharedInitialTone([string]$Name, [string]$Channels, [byte[]]$Progr
     if ($LASTEXITCODE -ne 0) { throw "Shared OP conversion failed: $Name" }
     $mml = [System.IO.File]::ReadAllText((Join-Path $runDirectory ($Name + '.mml')))
     $warning = [System.IO.File]::ReadAllText($warningPath)
-    if ([regex]::Matches($warning, '警告: VRC7の初期OP設定').Count -ne $Warnings) {
+    if ([regex]::Matches($warning, '警告: VRC7のCh\.').Count -ne $Warnings) {
         throw "Unexpected shared OP warning count: $Name"
     }
     if ($Warnings -gt 0 -and $warning -notmatch '変換を続行します') {
@@ -94,8 +94,10 @@ function Test-SharedInitialTone([string]$Name, [string]$Channels, [byte[]]$Progr
             ($expected -ne '' -and ($ops.Count -ne 1 -or $ops[0].Value -ne $expected))) {
             throw "Unexpected OP at header ${Name}/${channel}: $header"
         }
-        $custom = $Programs[$index] -ne 80
-        if ($header -notmatch $(if ($custom) { '@@0' } else { '@@12' })) {
+        $instrument = if ($ExpectedInstruments.Count) {
+            $ExpectedInstruments[$index]
+        } elseif ($Programs[$index] -eq 80) { '@@12' } else { '@@0' }
+        if ($header -notmatch ([regex]::Escape($instrument) + '(?!\d)')) {
             throw "Instrument selection was removed: ${Name}/${channel}"
         }
         if ($Lfo -eq 1 -and $header -notmatch 'MP\d+') {
@@ -106,12 +108,12 @@ function Test-SharedInitialTone([string]$Name, [string]$Channels, [byte[]]$Progr
 }
 
 Test-SharedInitialTone 'same' 'GHIJKL' @(38,38,38,38,38,38) @('OP0','','','','','') 0
-Test-SharedInitialTone 'changes' 'GHIJKL' @(38,38,39,39,38,80) @('OP0','','OP1','','OP0','') 2
+Test-SharedInitialTone 'changes' 'GHIJKL' @(38,38,39,39,38,80) @('OP0','','','','','') 2 -ExpectedInstruments @('@@0','@@0','@@3','@@3','@@0','@@12')
 Test-SharedInitialTone 'preset-first' 'GHI' @(80,38,38) @('','OP0','') 0
-Test-SharedInitialTone 'preset-between' 'GHIJ' @(38,80,38,39) @('OP0','','','OP1') 1
+Test-SharedInitialTone 'preset-between' 'GHIJ' @(38,80,38,39) @('OP0','','','') 1 -ExpectedInstruments @('@@0','@@12','@@0','@@3')
 Test-SharedInitialTone 'without-g' 'HK' @(38,38) @('OP0','') 0
 Test-SharedInitialTone 'presets-only' 'GHIJKL' @(80,80,80,80,80,80) @('','','','','','') 0
-Test-SharedInitialTone 'changes-no-lfo' 'GHIJKL' @(38,38,39,39,38,80) @('OP0','','OP1','','OP0','') 2 0
+Test-SharedInitialTone 'changes-no-lfo' 'GHIJKL' @(38,38,39,39,38,80) @('OP0','','','','','') 2 0 @('@@0','@@0','@@3','@@3','@@0','@@12')
 Test-SharedInitialTone 'presets-only-no-lfo' 'GHIJKL' @(80,80,80,80,80,80) @('','','','','','') 0 0
 
 Write-Host 'VRC7 tone tests passed (shared initial OP, warnings, preset/custom LFO, six channels, program changes and loops).'

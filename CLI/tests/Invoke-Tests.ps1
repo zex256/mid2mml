@@ -123,6 +123,7 @@ if ($output -notmatch [regex]::Escape('MIDIファイルを複数指定できま�
 & $volumeEnvelopeScript -Executable $resolvedExecutable
 & $pitchEnvelopeScript -Executable $resolvedExecutable
 & $vrc7ToneScript -Executable $resolvedExecutable
+& (Join-Path $PSScriptRoot 'Invoke-Vrc7OpControlTests.ps1') -Executable $resolvedExecutable
 & $fdsToneScript -Executable $resolvedExecutable
 & $definitionCommentScript -Executable $resolvedExecutable
 & (Join-Path $PSScriptRoot 'Invoke-LfoTests.ps1') -Executable $resolvedExecutable
