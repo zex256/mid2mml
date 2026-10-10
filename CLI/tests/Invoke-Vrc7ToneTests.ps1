@@ -42,21 +42,21 @@ foreach ($channel in 'GHIJKL'.ToCharArray()) {
     if ($lines.Count -lt 2 -or $lines[0] -notmatch '@@0') {
         throw "Missing custom instrument selection: $channel"
     }
-    if ([regex]::Matches($lines[0], '@@0OP0').Count -ne 1) {
+    if ([regex]::Matches($lines[0], '@@0OP0MP\d+').Count -ne 1) {
         throw "Unexpected OP command at channel header: $channel"
     }
     $body = ($lines | Select-Object -Skip 1) -join "`n"
-    if ($body -notmatch '@@0OP1' -or $body -notmatch '@@0OP0' -or $body -notmatch '@@12') {
+    if ($body -notmatch '@@0OP1MP\d+' -or $body -notmatch '@@0OP0MP\d+' -or $body -notmatch '@@12MP\d+') {
         throw "Missing OP command at program change or loop restoration: $channel"
     }
 
     $preset = Convert-ToneFixture "preset-$channel" "$channel" @(80, 38)
     $presetHeader = @($preset -split '\r?\n' | Where-Object { $_ -cmatch "^$channel\s" })[0]
-    if ($presetHeader -notmatch '@@12' -or $presetHeader -match '@@0') {
+    if ($presetHeader -notmatch '@@12MP\d+' -or $presetHeader -match '@@0') {
         throw "LFO was mistaken for a custom tone at channel header: $channel"
     }
     $presetBody = (@($preset -split '\r?\n' | Where-Object { $_ -cmatch "^$channel\s" }) | Select-Object -Skip 1) -join "`n"
-    if ($preset -notmatch '@OP0\s*=' -or $presetBody -notmatch '@@0OP0' -or $presetBody -notmatch '@@12') {
+    if ($preset -notmatch '@OP0\s*=' -or $presetBody -notmatch '@@0OP0MP\d+' -or $presetBody -notmatch '@@12MP\d+') {
         throw "Preset/custom switching or preset loop restoration failed: $channel"
     }
 }
@@ -98,8 +98,8 @@ function Test-SharedInitialTone([string]$Name, [string]$Channels, [byte[]]$Progr
         if ($header -notmatch $(if ($custom) { '@@0' } else { '@@12' })) {
             throw "Instrument selection was removed: ${Name}/${channel}"
         }
-        if ($custom -and $Lfo -eq 1 -and $header -notmatch 'MP\d+') {
-            throw "OP suppression removed the channel LFO: ${Name}/${channel}"
+        if ($Lfo -eq 1 -and $header -notmatch 'MP\d+') {
+            throw "Missing channel LFO: ${Name}/${channel}"
         }
         if ($Lfo -eq 0 -and $mml -match 'MP\d+') { throw "Disabled LFO was emitted: $Name" }
     }
@@ -112,5 +112,6 @@ Test-SharedInitialTone 'preset-between' 'GHIJ' @(38,80,38,39) @('OP0','','','OP1
 Test-SharedInitialTone 'without-g' 'HK' @(38,38) @('OP0','') 0
 Test-SharedInitialTone 'presets-only' 'GHIJKL' @(80,80,80,80,80,80) @('','','','','','') 0
 Test-SharedInitialTone 'changes-no-lfo' 'GHIJKL' @(38,38,39,39,38,80) @('OP0','','OP1','','OP0','') 2 0
+Test-SharedInitialTone 'presets-only-no-lfo' 'GHIJKL' @(80,80,80,80,80,80) @('','','','','','') 0 0
 
-Write-Host 'VRC7 tone tests passed (shared initial OP, warnings, six channels, program changes and loops).'
+Write-Host 'VRC7 tone tests passed (shared initial OP, warnings, preset/custom LFO, six channels, program changes and loops).'

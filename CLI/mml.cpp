@@ -1662,9 +1662,7 @@ int Mml::Save(                                                                  
         previous_initial_op = commands.op;                                      // 最後に実際に出力したOPを記録する
         previous_initial_op_channel = ch_str[0];                                // 共有音色を設定したチャンネルを記録する
       }
-      if (!commands.op.empty()) {                                               // ユーザー音色のLFO設定は従来どおり出力する
-        ofs << commands.lfo;                                                    // OPを省略してもチャンネル別のMPは出力する
-      }
+      ofs << commands.lfo;                                                      // 音色の種類によらずMPコマンドを出力する
     } else if ('D' == ch_str[0]) {                                              // ノイズの場合
       ofs << "\t";
       if ("D255" != tone_.Get(ch_str[0], ch_entry.second.first_prg_no)) {       // 音色が"D255"以外なら
@@ -1832,10 +1830,7 @@ int Mml::Save(                                                                  
           prg_no = note.oct;                                                    // プログラム番号を更新
           if (('G' <= ch_str[0]) && ('L' >= ch_str[0])) {                       // VRC7の場合
             const auto commands = tone_.GetCommands(ch_str[0], prg_no);         ///< 音色変更の各コマンド
-            ofs << commands.instrument << commands.op;                          // 音色選択とOPは従来どおり毎回出力する
-            if (!commands.op.empty()) {                                         // ユーザー音色なら
-              ofs << commands.lfo;                                              // 従来どおりMPコマンドも出力する
-            }
+            ofs << commands.instrument << commands.op << commands.lfo;          // 音色選択・OP・MPを音色の種類によらず出力する
           } else {                                                              // その他チャンネルの場合
             ofs << tone_.Get(ch_str[0], prg_no);                                // 音色コマンドを出力する
           }
@@ -1877,10 +1872,7 @@ int Mml::Save(                                                                  
       prg_no = loop_prg_no;                                                     // プログラム番号をループ時点のプログラム番号に更新
       if (('G' <= ch_str[0]) && ('L' >= ch_str[0])) {                           // VRC7の場合
         const auto commands = tone_.GetCommands(ch_str[0], prg_no);             ///< ループ復帰の各コマンド
-        ofs << commands.instrument << commands.op;                              // 音色選択とOPは従来どおり毎回出力する
-        if (!commands.op.empty()) {                                             // ユーザー音色なら
-          ofs << commands.lfo;                                                  // 従来どおりMPコマンドも出力する
-        }
+        ofs << commands.instrument << commands.op << commands.lfo;              // 音色選択・OP・MPを音色の種類によらず出力する
       } else {                                                                  // その他チャンネルの場合
         ofs << tone_.Get(ch_str[0], prg_no);                                    // 音色コマンドを出力する
       }
