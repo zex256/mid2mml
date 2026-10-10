@@ -220,6 +220,23 @@ class Mml {
         const uint8_t& ch,                                                      ///< (i)チャンネル
         const uint8_t& prg_no) const;                                           ///< (i)プログラム番号
 
+    /** @brief 個別に出力を制御できる音色選択・VRC7共有音色・LFOコマンド */
+    struct Commands {
+      string instrument;                                                        ///< 音色選択コマンド（VRC7では@@番号）
+      string op;                                                                ///< VRC7全チャンネルで共有するOPコマンド
+      string lfo;                                                               ///< チャンネル別のMPコマンド
+    };
+
+    /**
+     * @brief 音色選択・OP・LFOを連結せずに取得する
+     * @param ch (i)対象チャンネル
+     * @param prg_no (i)MIDIプログラム番号
+     * @return 出力文字コードへ変換済みの各コマンド
+     */
+    Commands GetCommands(                                                       // 音色選択・OP・LFOを個別に取得する
+        const uint8_t& ch,                                                      ///< (i)チャンネル
+        const uint8_t& prg_no) const;                                           ///< (i)プログラム番号
+
     /**
      * @brief 登録済みの音符コマンドを取得する
      * @param ch (i)対象チャンネル
