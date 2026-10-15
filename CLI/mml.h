@@ -225,16 +225,6 @@ class Mml {
       string instrument;                                                        ///< 音色選択コマンド（VRC7では@@番号）
       string op;                                                                ///< VRC7全チャンネルで共有するOPコマンド
       string lfo;                                                               ///< チャンネル別のMPコマンド
-
-      /** @brief OPコマンドの番号を取得し、OPがなければ未設定を返す */
-      optional<uint16_t> OpNumber() const {
-        if (op.empty()) {                                                       // プリセット音色にはOPコマンドがない
-          return std::nullopt;
-        }
-        uint16_t number = 0;                                                    ///< OPコマンドに記載された定義番号
-        from_chars(op.data() + 2, op.data() + op.size(), number);               // 固定の接頭辞OPを除いて番号を読み取る
-        return number;
-      }
     };
 
     /**
@@ -388,11 +378,6 @@ class Mml {
           len(len_value),
           oct(oct_value),
           vol(vol_value) {}
-
-    /** @brief 演奏時刻を進める音符・休符かを判定する */
-    bool IsTimed() const noexcept {
-      return str.find_first_of("cdefgabnrw") == 0;                              // テンポなどの制御情報のlenは演奏時間に加算しない
-    }
   };
 
   // チャンネル情報構造体
@@ -418,18 +403,15 @@ class Mml {
   /** @brief VRC7共有OPの制御担当と、その担当だけから収集した設定履歴 */
   struct Vrc7OpControl {
     uint8_t channel = 0;                                                        ///< OP変更を担当するチャンネル、0は担当なし
+    optional<uint32_t> first_time;                                              ///< 最初に共有OPを設定する絶対tick、担当未決定なら未設定
     map<uint32_t, uint16_t> history;                                            ///< 絶対tickとOP番号、同時刻は最後の設定で上書きする
-  };
-
-  /** @brief 最初にOPを使うチャンネルを選び、そのOP設定履歴を収集する */
-  Vrc7OpControl MakeVrc7OpControl() const;
+  } op_control_;                                                                ///< 読み込みループ内で収集した共有OP情報
 
   /** @brief 共有OPと不一致のユーザー音色をプリセットへ置き換える */
   Tone::Commands GetVrc7Commands(
       uint8_t ch,                                                               ///< (i)VRC7チャンネル
       uint8_t prg_no,                                                           ///< (i)MIDIプログラム番号
       uint32_t time,                                                            ///< (i)判定する絶対tick
-      const Vrc7OpControl& control,                                             ///< (i)OP制御チャンネルと設定履歴
       bool warn = true) const;                                                  ///< (i)代替時の警告を表示するか
  public:
   // メンバ関数
@@ -446,7 +428,8 @@ class Mml {
         tone_(),
         pitch_(),
         ch_map_(),
-        time_base_(64) {}
+        time_base_(64),
+        op_control_() {}
 
   /**
    * @brief MIDIデータからMML変換結果を作成する
@@ -465,7 +448,8 @@ class Mml {
         tone_(),
         pitch_(),
         ch_map_(),
-        time_base_(64) {
+        time_base_(64),
+        op_control_() {
     Load(midi);                                                                 // ロードを呼ぶ
   }
 
@@ -488,7 +472,8 @@ class Mml {
         tone_(),
         pitch_(),
         ch_map_(),
-        time_base_(64) {
+        time_base_(64),
+        op_control_() {
     Load(midi, move(ch_str));                                                   // ロードを呼ぶ
   }
 

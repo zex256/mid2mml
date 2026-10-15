@@ -39,6 +39,7 @@ void Mml::Load(                                                                 
 #endif
   programmer_ = username == nullptr ? "" : username;                            // 打ち込み者名を設定
   ch_str_ = ch_str;                                                             // チャンネル文字列を保存
+  op_control_ = {};                                                             // MIDI読み込みごとにOP制御担当と履歴を初期化する
   time_base_ = midi.time_base();                                                // Midiクラスからタイムベースを取得する
   const uint16_t whole_note = time_base_ << 2;                                  ///< 全音符の長さ
   string per_ch_str("DE");                                                      ///< パーカッションチャンネル文字列
@@ -337,6 +338,26 @@ void Mml::Load(                                                                 
             // 音色
             tone_.Set(mml_ch, prg_no, note_on->status2);                        // プログラム番号を登録
             if (prev_prg_no != prg_no) {                                        // １つ前の音符のプログラム（音色）番号と違うなら
+              // 初期音色は時刻0とし、音色登録と同じループでOP制御担当と履歴を決める。
+              if ('G' <= mml_ch && mml_ch <= 'L') {                             // VRC7音色の場合
+                const auto commands = tone_.GetCommands(mml_ch, prg_no);        ///< 登録した音色の各コマンド
+                if (!commands.op.empty()) {                                     // ユーザー音色にOPがある場合
+                  const uint32_t time = channel.first_octave == 255 ?           // 最初に使用する音色なら、
+                      0 : note_on->time;                                        // 初期設定の時刻0、それ以外は発音開始tickを使う
+                  if (!op_control_.first_time ||                                // OP制御担当が未決定、または、
+                      time < *op_control_.first_time) {                         // より早くOPを使う候補なら
+                    op_control_.channel = mml_ch;                               // 同時刻の候補は既存のチャンネル割当順を優先する
+                    op_control_.first_time = time;                              // 制御担当が最初にOPを使う時刻を記録する
+                    op_control_.history.clear();                                // 以前の候補の履歴は新しい担当へ引き継がない
+                  }
+                  if (op_control_.channel == mml_ch) {                          // 制御担当のOP設定だけを収集する
+                    uint16_t op = 0;                                            ///< OPコマンドの定義番号
+                    from_chars(commands.op.data() + 2,
+                        commands.op.data() + commands.op.size(), op);           // 接頭辞OPの2文字を除いて番号を読み取る
+                    op_control_.history[time] = op;                             // 同じtickの設定は最後のOP番号で上書きする
+                  }
+                }
+              }
               prev_prg_no = prg_no;                                             // １つ前の音符のプログラム（音色）番号を更新
               /// MMLへ出力する音符・休符・制御情報
               NoteInfo note("$", 0, prg_no);                                    ///< プログラム番号を保持する音符情報'$'で音符情報を作成
@@ -1551,82 +1572,29 @@ void Mml::LoopPointConclusion() {                                               
   }
 }
 
-/** @brief 最初にOPを使うチャンネルを選び、そのOP設定履歴を収集する */
-Mml::Vrc7OpControl Mml::MakeVrc7OpControl() const {
-  Vrc7OpControl control;                                                        ///< OP制御チャンネルと履歴
-  optional<uint32_t> first_time;                                                ///< 最初に共有OPを設定する絶対tick
-  // 初期設定は時刻0とし、同時刻の候補はチャンネル割当順を優先する。
-  for (const uint8_t ch : ch_str_) {                                            // 指定されたチャンネル割当順で候補を探す
-    const auto entry = ch_map_.find(ch);                                        ///< 使用チャンネルの情報
-    if (ch < 'G' || ch > 'L' || entry == ch_map_.end()) {                       // 使用しているVRC7以外は対象外
-      continue;
-    }
-    optional<uint32_t> candidate;                                               ///< このチャンネルが最初にOPを使用する時刻
-    uint32_t time = 0;                                                          ///< 音符・休符の長さを累積した絶対tick
-    if (tone_.GetCommands(ch, entry->second.first_prg_no).OpNumber()) {         // 初期音色がユーザー音色なら
-      candidate = 0;
-    } else {
-      for (const auto& note : entry->second.note_vector) {                      // 最初のOPを使う音色変更を探す
-        if (note.str == "$" && tone_.GetCommands(ch, note.oct).OpNumber()) {    // ユーザー音色への変更なら
-          candidate = time;
-          break;
-        }
-        if (note.IsTimed()) {                                                   // 音符・休符だけが演奏時刻を進める
-          time += note.len;
-        }
-      }
-    }
-    if (candidate && (!first_time || *candidate < *first_time)) {               // より早いOP使用チャンネルなら
-      control.channel = ch;
-      first_time = candidate;
-    }
-  }
-  if (!control.channel) {                                                       // 全チャンネルがプリセット音色だけなら
-    return control;
-  }
-  // 担当を確定した後、そのチャンネルだけのOP履歴を作る。
-  const auto& channel = ch_map_.at(control.channel);                            ///< OP制御チャンネルの音符情報
-  if (const auto op = tone_.GetCommands(control.channel,
-      channel.first_prg_no).OpNumber()) {                                       // 初期OPがあれば時刻0に登録する
-    control.history[0] = *op;
-  }
-  uint32_t time = 0;                                                            ///< OP制御チャンネルの絶対tick
-  for (const auto& note : channel.note_vector) {                                // 曲全体のOP設定を収集する
-    if (note.str == "$") {                                                      // 音色変更なら
-      const auto op = tone_.GetCommands(control.channel, note.oct).OpNumber();  ///< 変更後のOP番号
-      if (op) {                                                                 // ユーザー音色だけが共有OPを変更する
-        control.history[time] = *op;                                            // 同じtickの設定は最後のOPで上書きする
-      }
-    }
-    if (note.IsTimed()) {                                                       // 音符・休符だけが演奏時刻を進める
-      time += note.len;
-    }
-  }
-  return control;
-}
-
 /** @brief 共有OPと不一致のユーザー音色をプリセットへ置き換える */
 Mml::Tone::Commands Mml::GetVrc7Commands(
     uint8_t ch,                                                                 ///< (i)VRC7チャンネル
     uint8_t prg_no,                                                             ///< (i)MIDIプログラム番号
     uint32_t time,                                                              ///< (i)判定する絶対tick
-    const Vrc7OpControl& control,                                               ///< (i)OP制御チャンネルと設定履歴
     bool warn) const                                                            ///< (i)代替時の警告を表示するか
 {
   auto commands = tone_.GetCommands(ch, prg_no);                                ///< 音色選択・共有OP・MPコマンド
-  const auto requested = commands.OpNumber();                                   ///< この音色が要求するOP番号
-  if (ch == control.channel || !requested) {                                    // 担当またはプリセット音色ならそのまま使う
+  if (ch == op_control_.channel || commands.op.empty()) {                       // 担当またはプリセット音色ならそのまま使う
     return commands;
   }
-  const auto next = control.history.upper_bound(time);                          ///< 対象時刻より後の最初のOP設定
-  const bool matches = next != control.history.begin() &&                       // その時刻までに共有OPが設定されており、
-      std::prev(next)->second == *requested;                                    // 最後に設定されたOP番号が要求と一致するか
+  uint16_t requested = 0;                                                       ///< この音色が要求するOP番号
+  from_chars(commands.op.data() + 2,
+      commands.op.data() + commands.op.size(), requested);                      // 接頭辞OPの2文字を除いて番号を読み取る
+  const auto next = op_control_.history.upper_bound(time);                      ///< 対象時刻より後の最初のOP設定
+  const bool matches = next != op_control_.history.begin() &&                   // その時刻までに共有OPが設定されており、
+      std::prev(next)->second == requested;                                     // 最後に設定されたOP番号が要求と一致するか
   commands.op.clear();                                                          // 他チャンネルからは共有OPを変更しない
   if (!matches) {                                                               // 共有OPが未設定または要求した音色と違う場合
     commands.instrument = "@@" + kToneDefVrc7Preset[prg_no];                    // MIDI音色に対応するプリセットへ代替する
     if (warn) {                                                                 // 実際に代替コマンドを出力する場合だけ警告する
       cerr << "警告: VRC7のCh." << static_cast<char>(ch) << "のtick " << time
-           << "で要求したOP" << *requested
+           << "で要求したOP" << requested
            << "は共有OPと一致しないため、プリセット音色"
            << kToneDefVrc7Preset[prg_no] << "を使用して変換を続行します。\n";
       if (kToneDefVrc7Preset[prg_no] == "0") {                                  // 0はプリセット音色ではないが指定を尊重する
@@ -1705,7 +1673,6 @@ int Mml::Save(                                                                  
     ofs << ch_str << "\tt" << first_tempo_ << '\n';                             // テンポを出力
   }
   // チャンネル先頭のコマンド出力
-  const Vrc7OpControl op_control = MakeVrc7OpControl();                         ///< OP制御担当と曲全体の共有OP履歴
   for (const auto& ch_entry : ch_map_) {                                        // チャンネルマップループ
     string ch_str("? ");                                                        ///< 編集用チャンネル文字
     ch_str[0] = ch_entry.first;                                                 // チャンネルをセット
@@ -1736,7 +1703,7 @@ int Mml::Save(                                                                  
     // 音色
     if (('G' <= ch_str[0]) && ('L' >= ch_str[0])) {                             // VRC7の場合
       const auto commands = GetVrc7Commands(                                    ///< 共有OPを考慮した初期音色・OP・MP
-          ch_str[0], ch_entry.second.first_prg_no, 0, op_control);
+          ch_str[0], ch_entry.second.first_prg_no, 0);
       ofs << "\t" << commands.instrument << commands.op << commands.lfo;        // OPは制御チャンネルだけに出力する
     } else if ('D' == ch_str[0]) {                                              // ノイズの場合
       ofs << "\t";
@@ -1773,7 +1740,7 @@ int Mml::Save(                                                                  
     string vrc7_instrument;                                                     ///< 最後に出力したVRC7音色選択コマンド
     if ('G' <= ch_entry.first && ch_entry.first <= 'L') {                       // VRC7の場合
       vrc7_instrument = GetVrc7Commands(
-          ch_entry.first, prg_no, 0, op_control, false).instrument;             // 初期設定済みの音色を記録する
+          ch_entry.first, prg_no, 0, false).instrument;                         // 初期設定済みの音色を記録する
     }
     string comment;                                                             ///< コメント文字列
     string ch_str("? ");                                                        ///< 編集用チャンネル文字
@@ -1791,12 +1758,12 @@ int Mml::Save(                                                                  
       case 'n':                                                                 // 音符番号指定
         // 共有OPが変わっていれば、同じMIDI音色でも各音符の先頭で選択を見直す。
         if ('G' <= ch_entry.first && ch_entry.first <= 'L' &&                   // VRC7の音符で、
-            ch_entry.first != op_control.channel) {                             // OP制御担当ではない場合
+            ch_entry.first != op_control_.channel) {                            // OP制御担当ではない場合
           auto commands = GetVrc7Commands(                                      ///< この音符の時刻で使用できる音色
-              ch_entry.first, prg_no, time, op_control, false);
+              ch_entry.first, prg_no, time, false);
           if (commands.instrument != vrc7_instrument) {                         // ユーザー音色とプリセットが切り替わる場合
             commands = GetVrc7Commands(
-                ch_entry.first, prg_no, time, op_control);                      // 代替する場合は警告を表示する
+                ch_entry.first, prg_no, time);                                  // 代替する場合は警告を表示する
             ofs << commands.instrument << commands.lfo;                         // チャンネル別の音色選択とMPだけを出力する
             vrc7_instrument = commands.instrument;                              // 出力済みの音色を記録する
           }
@@ -1925,7 +1892,7 @@ int Mml::Save(                                                                  
           prg_no = note.oct;                                                    // プログラム番号を更新
           if (('G' <= ch_str[0]) && ('L' >= ch_str[0])) {                       // VRC7の場合
             const auto commands = GetVrc7Commands(                              ///< 共有OPを考慮した音色変更の各コマンド
-                ch_str[0], prg_no, time, op_control);
+                ch_str[0], prg_no, time);
             ofs << commands.instrument << commands.op << commands.lfo;          // 制御担当以外はOPを出力しない
             vrc7_instrument = commands.instrument;                              // 出力済みの音色を記録する
           } else {                                                              // その他チャンネルの場合
@@ -1961,7 +1928,7 @@ int Mml::Save(                                                                  
         ofs << note.str;                                                        // そのまま出力
         break;
       }
-      if (note.IsTimed()) {                                                     // 音符・休符を出力した分だけ演奏時刻を進める
+      if (note.str.find_first_of("cdefgabnrw") == 0) {                          // 音符・休符を出力した分だけ演奏時刻を進める
         time += note.len;
       }
     }
@@ -1970,13 +1937,13 @@ int Mml::Save(                                                                  
     // ループ時の音色出力
     const bool restore_vrc7 = loop_prg_no != 255 &&                             // ループ音色が記録されており、
         'G' <= ch_entry.first && ch_entry.first <= 'L' &&                       // VRC7で、
-        GetVrc7Commands(ch_entry.first, loop_prg_no, loop_time,
-            op_control, false).instrument != vrc7_instrument;                   // ループ開始時と最後の音色選択が異なるか
+        GetVrc7Commands(ch_entry.first, loop_prg_no, loop_time, false)
+            .instrument != vrc7_instrument;                                     // ループ開始時と最後の音色選択が異なるか
     if (loop_prg_no != 255 && (loop_prg_no != prg_no || restore_vrc7)) {        // 音色番号または実際の音色選択を復帰する場合
       prg_no = loop_prg_no;                                                     // プログラム番号をループ時点のプログラム番号に更新
       if (('G' <= ch_str[0]) && ('L' >= ch_str[0])) {                           // VRC7の場合
         const auto commands = GetVrc7Commands(                                  ///< ループ位置の共有OPを参照した復帰コマンド
-            ch_str[0], prg_no, loop_time, op_control);
+            ch_str[0], prg_no, loop_time);
         ofs << commands.instrument << commands.op << commands.lfo;              // OPは制御担当だけに出力する
       } else {                                                                  // その他チャンネルの場合
         ofs << tone_.Get(ch_str[0], prg_no);                                    // 音色コマンドを出力する
