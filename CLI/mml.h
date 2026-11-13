@@ -399,6 +399,20 @@ class Mml {
   };
   map<uint8_t, ChInfo> ch_map_;                                                 ///< チャンネルマップ
   uint16_t time_base_;                                                          ///< 分解能
+
+  /** @brief VRC7共有OPの制御担当と、その担当だけから収集した設定履歴 */
+  struct Vrc7OpControl {
+    uint8_t channel = 0;                                                        ///< OP変更を担当するチャンネル、0は担当なし
+    optional<uint32_t> first_time;                                              ///< 最初に共有OPを設定する絶対tick、担当未決定なら未設定
+    map<uint32_t, uint16_t> history;                                            ///< 絶対tickとOP番号、同時刻は最後の設定で上書きする
+  } op_control_;                                                                ///< 読み込みループ内で収集した共有OP情報
+
+  /** @brief 共有OPと不一致のユーザー音色をプリセットへ置き換える */
+  Tone::Commands GetVrc7Commands(
+      uint8_t ch,                                                               ///< (i)VRC7チャンネル
+      uint8_t prg_no,                                                           ///< (i)MIDIプログラム番号
+      uint32_t time,                                                            ///< (i)判定する絶対tick
+      bool warn = true) const;                                                  ///< (i)代替時の警告を表示するか
  public:
   // メンバ関数
   /** @brief 空のMML変換結果を作成する */
@@ -414,7 +428,8 @@ class Mml {
         tone_(),
         pitch_(),
         ch_map_(),
-        time_base_(64) {}
+        time_base_(64),
+        op_control_() {}
 
   /**
    * @brief MIDIデータからMML変換結果を作成する
@@ -433,7 +448,8 @@ class Mml {
         tone_(),
         pitch_(),
         ch_map_(),
-        time_base_(64) {
+        time_base_(64),
+        op_control_() {
     Load(midi);                                                                 // ロードを呼ぶ
   }
 
@@ -456,7 +472,8 @@ class Mml {
         tone_(),
         pitch_(),
         ch_map_(),
-        time_base_(64) {
+        time_base_(64),
+        op_control_() {
     Load(midi, move(ch_str));                                                   // ロードを呼ぶ
   }
 
